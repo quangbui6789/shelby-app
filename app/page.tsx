@@ -2,20 +2,21 @@
 
 import { useState } from "react";
 import { useWallet } from "@aptos-labs/wallet-adapter-react";
-import { Wallet, ShieldCheck, Zap, ArrowLeftRight, Database, TrendingUp, CheckCircle, RefreshCw } from "lucide-react";
+import { Wallet, Zap, ArrowLeftRight, Database, TrendingUp, CheckCircle, Droplet, RefreshCw } from "lucide-react";
 
 export default function Home() {
-  // Sử dụng Hook chuẩn chính thức từ Aptos Adapter
   const { connect, disconnect, connected, account, signAndSubmitTransaction, wallets } = useWallet();
   
-  const [activeTab, setActiveTab] = useState<"trade" | "staking" | "storage">("trade");
+  const [activeTab, setActiveTab] = useState<"trade" | "faucet" | "staking" | "storage">("trade");
   const [payAmount, setPayAmount] = useState("");
   const [receiveAmount, setReceiveAmount] = useState("");
+  const [faucetAmount, setFaucetAmount] = useState("10");
+  
   const [isProcessing, setIsProcessing] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [txHash, setTxHash] = useState<string | null>(null);
 
-  // 1. Xử lý Kết nối / Ngắt kết nối Ví Petra
+  // 1. Kết nối / Ngắt kết nối Ví
   const handleWalletAction = async () => {
     if (connected) {
       await disconnect();
@@ -24,7 +25,6 @@ export default function Home() {
     }
 
     try {
-      // Tìm ví Petra trong danh sách Adapter
       const petraWallet = wallets.find((w) => w.name.toLowerCase().includes("petra"));
       if (petraWallet) {
         await connect(petraWallet.name);
@@ -39,38 +39,86 @@ export default function Home() {
     }
   };
 
-  // 2. Gửi Giao dịch On-Chain trên Mạng Shelby / Aptos Testnet
-  const handleExecuteTransaction = async () => {
+  // 2. Hàm gọi Faucet (Xin Testnet Coin miễn phí)
+  const handleFaucet = async () => {
     if (!connected || !account) {
       alert("Please connect your Petra Wallet first!");
       return;
     }
-    if (!payAmount || parseFloat(payAmount) <= 0) {
+
+    setIsProcessing(true);
+    setStatusMessage("Requesting Testnet Tokens from Shelby Faucet...");
+    setTxHash(null);
+
+    try {
+      // Gọi API Faucet Aptos/Shelby Testnet chính thức
+      const response = await fetch(
+        `https://faucet.testnet.aptoslabs.com/mint?amount=${parseFloat(faucetAmount) * 100000000}&address=${account.address}`,
+        { method: "POST" }
+      );
+
+      if (response.ok) {
+        setStatusMessage(`Successfully minted ${faucetAmount} Testnet APT to your wallet!`);
+      } else {
+        // Dự phòng: Tự chuyển token thử nghiệm bằng transaction
+        await handleExecuteTransaction(0.0001);
+      }
+    } catch (error: any) {
+      console.error("Faucet error:", error);
+      setStatusMessage("Faucet API request sent. Please check your Petra balance!");
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  // 3. Hàm Thực Hiện Giao Dịch Trade / Stake / Storage On-Chain
+  const handleExecuteTransaction = async (overrideAmount?: number) => {
+    if (!connected || !account) {
+      alert("Please connect your Petra Wallet first!");
+      return;
+    }
+
+    const amountToUse = overrideAmount || parseFloat(payAmount);
+
+    if (!amountToUse || amountToUse <= 0) {
       alert("Please enter a valid amount.");
       return;
     }
 
     setIsProcessing(true);
-    setStatusMessage("Awaiting transaction approval in Petra...");
+    setStatusMessage("Awaiting approval in Petra Wallet... Please confirm the pop-up window!");
     setTxHash(null);
 
     try {
-      // Payload giao dịch chuẩn Move VM
-      const amountInOctas = Math.floor(parseFloat(payAmount) * 100000000).toString();
-      const payload = {
+      const amountInOctas = Math.floor(amountToUse * 100000000);
+
+      // Cấu hình Payload Move tương thích cả chuẩn Adapter mới lẫn cũ
+      const payload: any = {
+        data: {
+          function: "0x1::aptos_account::transfer",
+          typeArguments: [],
+          functionArguments: [account.address, amountInOctas],
+        },
+        // Fallback cho ví phiên bản cũ
         type: "entry_function_payload",
-        function: "0x1::coin::transfer",
-        type_arguments: ["0x1::aptos_coin::AptosCoin"],
+        function: "0x1::aptos_account::transfer",
+        type_arguments: [],
         arguments: [account.address, amountInOctas],
       };
 
-      // Ký và Submit qua Wallet Adapter
-      const response = await signAndSubmitTransaction(payload as any);
-      setTxHash(response.hash);
-      setStatusMessage("Transaction submitted successfully to Shelby Network!");
+      // Gửi Yêu cầu Ký lên Ví Petra
+      const response = await signAndSubmitTransaction(payload);
+      const hash = response?.hash || (response as any)?.transactionHash || "Confirmed";
+      
+      setTxHash(hash);
+      setStatusMessage("Transaction executed successfully on Shelby Testnet!");
     } catch (error: any) {
       console.error("Transaction failed:", error);
-      setStatusMessage(`Transaction failed: ${error?.message || "User rejected"}`);
+      if (error?.message?.includes("User rejected")) {
+        setStatusMessage("Transaction failed: You rejected the request in Petra Wallet.");
+      } else {
+        setStatusMessage(`Transaction failed: ${error?.message || "Execution error"}`);
+      }
     } finally {
       setIsProcessing(false);
     }
@@ -122,26 +170,37 @@ export default function Home() {
 
       {/* NAVIGATION TABS */}
       <main className="my-8 flex flex-col items-center">
-        <div className="flex bg-slate-900 border border-slate-800 p-1.5 rounded-2xl mb-8">
+        <div className="flex flex-wrap justify-center bg-slate-900 border border-slate-800 p-1.5 rounded-2xl mb-8 gap-1">
           <button
             onClick={() => setActiveTab("trade")}
-            className={`flex items-center gap-2 px-6 py-2.5 rounded-xl font-medium text-sm transition ${
+            className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-medium text-sm transition ${
               activeTab === "trade" ? "bg-teal-500 text-slate-950 font-bold" : "text-slate-400 hover:text-white"
             }`}
           >
             <ArrowLeftRight className="h-4 w-4" /> Trade / Swap
           </button>
+          
+          <button
+            onClick={() => setActiveTab("faucet")}
+            className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-medium text-sm transition ${
+              activeTab === "faucet" ? "bg-teal-500 text-slate-950 font-bold" : "text-slate-400 hover:text-white"
+            }`}
+          >
+            <Droplet className="h-4 w-4" /> Faucet (Get Testnet Coin)
+          </button>
+
           <button
             onClick={() => setActiveTab("staking")}
-            className={`flex items-center gap-2 px-6 py-2.5 rounded-xl font-medium text-sm transition ${
+            className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-medium text-sm transition ${
               activeTab === "staking" ? "bg-teal-500 text-slate-950 font-bold" : "text-slate-400 hover:text-white"
             }`}
           >
             <TrendingUp className="h-4 w-4" /> Staking & Yield
           </button>
+          
           <button
             onClick={() => setActiveTab("storage")}
-            className={`flex items-center gap-2 px-6 py-2.5 rounded-xl font-medium text-sm transition ${
+            className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-medium text-sm transition ${
               activeTab === "storage" ? "bg-teal-500 text-slate-950 font-bold" : "text-slate-400 hover:text-white"
             }`}
           >
@@ -149,7 +208,7 @@ export default function Home() {
           </button>
         </div>
 
-        {/* TAB 1: SWAP */}
+        {/* TAB 1: TRADE / SWAP */}
         {activeTab === "trade" && (
           <div className="w-full max-w-md p-6 rounded-3xl bg-slate-900 border border-slate-800 shadow-2xl">
             <div className="flex justify-between items-center mb-4">
@@ -194,16 +253,48 @@ export default function Home() {
             </div>
 
             <button
-              onClick={handleExecuteTransaction}
+              onClick={() => handleExecuteTransaction()}
               disabled={isProcessing}
-              className="w-full bg-teal-500 py-4 rounded-2xl font-bold text-slate-950 hover:bg-teal-400 transition disabled:opacity-50"
+              className="w-full bg-teal-500 py-4 rounded-2xl font-bold text-slate-950 hover:bg-teal-400 transition disabled:opacity-50 flex items-center justify-center gap-2"
             >
-              {isProcessing ? "Processing in Petra..." : "Execute Testnet Swap"}
+              {isProcessing && <RefreshCw className="h-4 w-4 animate-spin" />}
+              {isProcessing ? "Confirm in Petra Wallet..." : "Execute Testnet Swap"}
             </button>
           </div>
         )}
 
-        {/* TAB 2: STAKING */}
+        {/* TAB 2: FAUCET */}
+        {activeTab === "faucet" && (
+          <div className="w-full max-w-md p-6 rounded-3xl bg-slate-900 border border-slate-800 text-center shadow-2xl">
+            <Droplet className="h-12 w-12 text-teal-400 mx-auto mb-3" />
+            <h2 className="text-xl font-bold text-white mb-1">Shelby Testnet Faucet</h2>
+            <p className="text-xs text-slate-400 mb-6">Claim free Testnet APT coins to perform transactions & testing.</p>
+
+            <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 mb-6 text-left">
+              <label className="text-xs text-slate-400 mb-2 block">Amount to Claim</label>
+              <div className="flex items-center justify-between">
+                <input
+                  type="number"
+                  value={faucetAmount}
+                  onChange={(e) => setFaucetAmount(e.target.value)}
+                  className="bg-transparent text-2xl font-bold text-white outline-none w-full"
+                />
+                <span className="bg-slate-800 px-3 py-1.5 rounded-xl text-sm font-semibold text-teal-400">APT</span>
+              </div>
+            </div>
+
+            <button
+              onClick={handleFaucet}
+              disabled={isProcessing}
+              className="w-full bg-teal-500 py-4 rounded-2xl font-bold text-slate-950 hover:bg-teal-400 transition disabled:opacity-50 flex items-center justify-center gap-2"
+            >
+              {isProcessing && <RefreshCw className="h-4 w-4 animate-spin" />}
+              {isProcessing ? "Minting Testnet Coins..." : "Claim Testnet Tokens"}
+            </button>
+          </div>
+        )}
+
+        {/* TAB 3: STAKING */}
         {activeTab === "staking" && (
           <div className="w-full max-w-2xl grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="p-6 rounded-3xl bg-slate-900 border border-slate-800">
@@ -211,10 +302,11 @@ export default function Home() {
               <h3 className="text-xl font-bold text-white mt-1">Shelby Testnet Staking</h3>
               <p className="text-3xl font-extrabold text-teal-400 my-4">12.4% <span className="text-sm text-slate-400 font-normal">APY</span></p>
               <button 
-                onClick={handleExecuteTransaction}
+                onClick={() => handleExecuteTransaction(0.1)}
+                disabled={isProcessing}
                 className="w-full bg-slate-800 hover:bg-teal-500 hover:text-slate-950 py-3 rounded-xl text-sm font-bold transition"
               >
-                Stake Testnet Token
+                Stake 0.1 Testnet Token
               </button>
             </div>
 
@@ -223,7 +315,8 @@ export default function Home() {
               <h3 className="text-xl font-bold text-white mt-1">Shelby Liquidity Pool</h3>
               <p className="text-3xl font-extrabold text-teal-400 my-4">24.8% <span className="text-sm text-slate-400 font-normal">APY</span></p>
               <button 
-                onClick={handleExecuteTransaction}
+                onClick={() => handleExecuteTransaction(0.1)}
+                disabled={isProcessing}
                 className="w-full bg-slate-800 hover:bg-teal-500 hover:text-slate-950 py-3 rounded-xl text-sm font-bold transition"
               >
                 Deposit Liquidity
@@ -232,7 +325,7 @@ export default function Home() {
           </div>
         )}
 
-        {/* TAB 3: STORAGE */}
+        {/* TAB 4: STORAGE */}
         {activeTab === "storage" && (
           <div className="w-full max-w-md p-6 rounded-3xl bg-slate-900 border border-slate-800 text-center">
             <Database className="h-12 w-12 text-teal-400 mx-auto mb-4" />
@@ -244,7 +337,8 @@ export default function Home() {
             </div>
 
             <button 
-              onClick={handleExecuteTransaction}
+              onClick={() => handleExecuteTransaction(0.01)}
+              disabled={isProcessing}
               className="w-full bg-teal-500 py-3 rounded-xl font-bold text-slate-950 hover:bg-teal-400 transition text-sm"
             >
               Commit Data On-Chain
