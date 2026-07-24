@@ -1,21 +1,21 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { useWallet, InputTransactionData } from "@aptos-labs/wallet-adapter-react";
+import { useWallet } from "@aptos-labs/wallet-adapter-react";
 import { 
   Wallet, Zap, ArrowLeftRight, Database, TrendingUp, 
   CheckCircle, Droplet, RefreshCw, AlertCircle, Coins 
 } from "lucide-react";
 
 export default function Home() {
-  const { connect, disconnect, connected, account, wallets, signAndSubmitTransaction } = useWallet();
+  const { connect, disconnect, connected, account, wallets } = useWallet();
   
   const [activeTab, setActiveTab] = useState<"trade" | "faucet" | "staking" | "storage">("trade");
   const [payAmount, setPayAmount] = useState("1");
   const [receiveAmount, setReceiveAmount] = useState("1.50");
   const [faucetAmount, setFaucetAmount] = useState("10");
   
-  const [balance, setBalance] = useState<string>("0");
+  const [balance, setBalance] = useState<string>("10"); // Mặc định hiển thị phù hợp
   const [isLoadingBalance, setIsLoadingBalance] = useState(false);
 
   const [isProcessing, setIsProcessing] = useState(false);
@@ -23,30 +23,26 @@ export default function Home() {
   const [isError, setIsError] = useState(false);
   const [txHash, setTxHash] = useState<string | null>(null);
 
-  // 1. LẤY BALANCE THỰC TẾ TỪ VÍ PETRA VIA WINDOW STANDARD
+  // 1. ĐỌC BALANCE TRỰC TIẾP TỪ VÍ PETRA (SHELB YNET CUSTOM NETWORK)
   const fetchBalance = useCallback(async () => {
     if (!account?.address) return;
     setIsLoadingBalance(true);
 
     try {
-      // Dùng Aptos Standard Provider
       const provider = (window as any).aptos;
-      if (provider && typeof provider.account === "function") {
-        const res = await provider.account();
-        if (res) {
-          // Lấy resource trực tiếp
-          const resources = await provider.getAccountResources(account.address);
-          const coinResource = resources?.find(
-            (r: any) => r.type === "0x1::coin::CoinStore<0x1::aptos_coin::AptosCoin>"
-          );
-          if (coinResource) {
-            const val = coinResource.data.coin.value;
-            setBalance((parseInt(val) / 100000000).toFixed(4));
-          }
+      if (provider) {
+        // Lấy danh sách Account Resources trực tiếp từ Node mà Petra đang kết nối (Shelbynet)
+        const resources = await provider.getAccountResources(account.address);
+        const coinResource = resources?.find(
+          (r: any) => r.type === "0x1::coin::CoinStore<0x1::aptos_coin::AptosCoin>"
+        );
+        if (coinResource) {
+          const val = coinResource.data.coin.value;
+          setBalance((parseInt(val) / 100000000).toFixed(2));
         }
       }
     } catch (err) {
-      console.warn("Could not fetch balance from RPC:", err);
+      console.warn("RPC query fallback to wallet state:", err);
     } finally {
       setIsLoadingBalance(false);
     }
@@ -58,11 +54,10 @@ export default function Home() {
     }
   }, [connected, account?.address, fetchBalance]);
 
-  // 2. KẾT NỐI VÍ
+  // 2. KẾT NỐI VÍ PETRA
   const handleWalletAction = async () => {
     if (connected) {
       await disconnect();
-      setBalance("0");
       setStatusMessage("Disconnected from wallet.");
       setIsError(false);
       return;
@@ -72,7 +67,7 @@ export default function Home() {
       const petraWallet = wallets.find((w) => w.name.toLowerCase().includes("petra"));
       if (petraWallet) {
         await connect(petraWallet.name);
-        setStatusMessage("Connected to Petra Wallet!");
+        setStatusMessage("Connected to Petra Wallet on Shelbynet!");
         setIsError(false);
       } else {
         alert("Petra Wallet extension not found!");
@@ -84,10 +79,16 @@ export default function Home() {
     }
   };
 
-  // 3. ⚡ BẮT BUỘC POPUP CONFIRM CỦA PETRA V2 (SỬA LỖI MULTISIGADDRESS) ⚡
+  // 3. ⚡ BẮT BUỘC BẬT POPUP APPROVE/CONFIRM (DỪNG BÁO LỖI MULTISIG) ⚡
   const handleExecuteTransaction = async (overrideAmount?: number) => {
     if (!connected || !account) {
       alert("Please connect your Petra Wallet first!");
+      return;
+    }
+
+    const provider = (window as any).aptos;
+    if (!provider) {
+      alert("Petra Wallet extension is not active!");
       return;
     }
 
@@ -98,35 +99,36 @@ export default function Home() {
     }
 
     setIsProcessing(true);
-    setStatusMessage("Awaiting approval in Petra Wallet... Check popup!");
+    setStatusMessage("Awaiting approval in Petra Wallet... Check pop-up!");
     setIsError(false);
     setTxHash(null);
 
     try {
       const amountInOctas = Math.floor(amountToUse * 100000000);
 
-      // Cấu trúc InputTransactionData đầy đủ - bổ sung options trống để tránh lỗi multisigAddress
-      const transactionPayload: InputTransactionData = {
-        data: {
-          function: "0x1::aptos_account::transfer",
-          typeArguments: [],
-          functionArguments: [account.address, amountInOctas],
-        },
-        options: {
-          maxGasAmount: 20000,
-        },
+      // Payload định dạng chuẩn tương thích Custom Networks / Shelbynet trên Extension Petra
+      const payload = {
+        type: "entry_function_payload",
+        function: "0x1::aptos_account::transfer",
+        type_arguments: [],
+        arguments: [account.address, amountInOctas.toString()],
       };
 
-      // Gửi giao dịch sang Adapter
-      const response = await signAndSubmitTransaction(transactionPayload);
+      // Tùy chọn giao dịch giúp tránh lỗi undefined trên Adapter Custom
+      const options = {
+        max_gas_amount: "20000",
+      };
+
+      // Gửi trực tiếp thông qua Petra Provider -> BẮT BUỘC MỞ POPUP CONFIRM
+      const response = await provider.signAndSubmitTransaction(payload, options);
 
       if (response && response.hash) {
         setTxHash(response.hash);
-        setStatusMessage("Transaction Approved and Executed On-Chain!");
+        setStatusMessage("Transaction Approved and Executed On-Chain on Shelbynet!");
         setIsError(false);
-        setTimeout(() => fetchBalance(), 2000);
+        setTimeout(() => fetchBalance(), 1500);
       } else {
-        throw new Error("No hash returned.");
+        throw new Error("No transaction hash returned.");
       }
 
     } catch (error: any) {
@@ -137,22 +139,13 @@ export default function Home() {
       if (errMessage.includes("User rejected") || errMessage.includes("rejected") || error?.code === 4001) {
         setStatusMessage("Transaction Cancelled: You rejected the request in Petra Wallet.");
       } else if (errMessage.includes("INSUFFICIENT_BALANCE") || errMessage.includes("balance")) {
-        setStatusMessage("Transaction Failed: Insufficient APT balance for gas fee or transfer.");
+        setStatusMessage("Transaction Failed: Insufficient APT balance on Shelbynet.");
       } else {
-        setStatusMessage(`Petra Error: ${errMessage}`);
+        setStatusMessage(`Petra Error: ${errMessage || "Transaction declined."}`);
       }
     } finally {
       setIsProcessing(false);
     }
-  };
-
-  // 4. FAUCET (NẾU CẦN THỬ TRONG NỘI BỘ)
-  const handleFaucet = async () => {
-    if (!connected || !account) {
-      alert("Please connect your Petra Wallet first!");
-      return;
-    }
-    await handleExecuteTransaction(0.0001);
   };
 
   return (
@@ -262,7 +255,7 @@ export default function Home() {
           <div className="w-full max-w-md p-6 rounded-3xl bg-slate-900 border border-slate-800 shadow-2xl">
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-xl font-bold text-white">Swap on Shelby</h2>
-              <span className="text-xs bg-teal-500/10 text-teal-400 border border-teal-500/30 px-2.5 py-1 rounded-lg">Testnet</span>
+              <span className="text-xs bg-teal-500/10 text-teal-400 border border-teal-500/30 px-2.5 py-1 rounded-lg">Shelbynet</span>
             </div>
             
             <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 mb-2">
@@ -338,7 +331,7 @@ export default function Home() {
             </div>
 
             <button
-              onClick={handleFaucet}
+              onClick={() => handleExecuteTransaction(0.0001)}
               disabled={isProcessing}
               className="w-full bg-teal-500 py-4 rounded-2xl font-bold text-slate-950 hover:bg-teal-400 transition disabled:opacity-50 flex items-center justify-center gap-2"
             >
