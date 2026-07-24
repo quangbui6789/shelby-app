@@ -1,109 +1,76 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { Wallet, ShieldCheck, Zap, ArrowLeftRight, Database, TrendingUp, CheckCircle, Droplet } from "lucide-react";
+import { useState } from "react";
+import { useWallet } from "@aptos-labs/wallet-adapter-react";
+import { Wallet, ShieldCheck, Zap, ArrowLeftRight, Database, TrendingUp, CheckCircle, RefreshCw } from "lucide-react";
 
 export default function Home() {
-  const [walletAddress, setWalletAddress] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"trade" | "staking" | "storage">("trade");
+  // Sử dụng Hook chuẩn chính thức từ Aptos Adapter
+  const { connect, disconnect, connected, account, signAndSubmitTransaction, wallets } = useWallet();
   
-  // Trade States
+  const [activeTab, setActiveTab] = useState<"trade" | "staking" | "storage">("trade");
   const [payAmount, setPayAmount] = useState("");
   const [receiveAmount, setReceiveAmount] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
-  
-  // Transaction & Wallet Status
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [txHash, setTxHash] = useState<string | null>(null);
 
-  // 1. Lấy Wallet Provider theo chuẩn Aptos Wallet Standard mới
-  const getAptosWallet = () => {
-    if (typeof window !== "undefined") {
-      // Chuẩn Aptos Standard sử dụng window.aptos
-      return (window as any).aptos;
-    }
-    return null;
-  };
-
-  // 2. Tự động kiểm tra trạng thái kết nối khi load trang
-  useEffect(() => {
-    const checkConnection = async () => {
-      const wallet = getAptosWallet();
-      if (wallet) {
-        try {
-          const isConnected = await wallet.isConnected();
-          if (isConnected) {
-            const account = await wallet.account();
-            setWalletAddress(account.address);
-          }
-        } catch (e) {
-          console.error("Auto connect check error:", e);
-        }
-      }
-    };
-    checkConnection();
-  }, []);
-
-  // 3. Hàm Kết nối Ví Petra theo Chuẩn Wallet Standard mới
-  const connectPetraWallet = async () => {
-    const wallet = getAptosWallet();
-
-    if (!wallet) {
-      alert("Petra Wallet extension not found! Please install Petra Wallet on Chrome.");
-      window.open("https://petra.app/", "_blank");
+  // 1. Xử lý Kết nối / Ngắt kết nối Ví Petra
+  const handleWalletAction = async () => {
+    if (connected) {
+      await disconnect();
+      setStatusMessage("Disconnected from wallet.");
       return;
     }
 
     try {
-      // Gọi kết nối theo chuẩn Aptos Wallet Standard
-      const response = await wallet.connect();
-      const accountAddress = response.address || (await wallet.account()).address;
-      setWalletAddress(accountAddress);
-      setStatusMessage("Wallet connected successfully via Aptos Wallet Standard!");
+      // Tìm ví Petra trong danh sách Adapter
+      const petraWallet = wallets.find((w) => w.name.toLowerCase().includes("petra"));
+      if (petraWallet) {
+        await connect(petraWallet.name);
+        setStatusMessage("Successfully connected to Petra Wallet!");
+      } else {
+        alert("Petra Wallet extension not found. Opening installation link...");
+        window.open("https://petra.app/", "_blank");
+      }
     } catch (error: any) {
-      console.error("Wallet connection error:", error);
-      setStatusMessage(`Connection failed: ${error?.message || "User cancelled connection"}`);
+      console.error("Wallet connection failed:", error);
+      setStatusMessage(`Connection failed: ${error?.message || "User cancelled"}`);
     }
   };
 
-  // 4. Hàm Thực hiện Giao dịch On-Chain trên mạng Shelby / Aptos Testnet
+  // 2. Gửi Giao dịch On-Chain trên Mạng Shelby / Aptos Testnet
   const handleExecuteTransaction = async () => {
-    const wallet = getAptosWallet();
-
-    if (!walletAddress || !wallet) {
+    if (!connected || !account) {
       alert("Please connect your Petra Wallet first!");
       return;
     }
     if (!payAmount || parseFloat(payAmount) <= 0) {
-      alert("Please enter a valid amount to swap.");
+      alert("Please enter a valid amount.");
       return;
     }
 
     setIsProcessing(true);
-    setStatusMessage("Awaiting approval in Petra Wallet...");
+    setStatusMessage("Awaiting transaction approval in Petra...");
     setTxHash(null);
 
     try {
-      // Chuyển đổi số lượng sang Octas (Decimals = 8)
-      const amountInOctas = Math.floor(parseFloat(payAmount) * 100000000).toString();
-
       // Payload giao dịch chuẩn Move VM
+      const amountInOctas = Math.floor(parseFloat(payAmount) * 100000000).toString();
       const payload = {
         type: "entry_function_payload",
         function: "0x1::coin::transfer",
         type_arguments: ["0x1::aptos_coin::AptosCoin"],
-        arguments: [walletAddress, amountInOctas], // Chuyển Testnet Coin thử nghiệm về chính ví
+        arguments: [account.address, amountInOctas],
       };
 
-      // Yêu cầu Petra ký & Submit Transaction lên Testnet
-      const response = await wallet.signAndSubmitTransaction(payload);
-      
-      const hash = response.hash || response;
-      setTxHash(hash);
-      setStatusMessage("Testnet Transaction submitted successfully to Shelby Network!");
+      // Ký và Submit qua Wallet Adapter
+      const response = await signAndSubmitTransaction(payload as any);
+      setTxHash(response.hash);
+      setStatusMessage("Transaction submitted successfully to Shelby Network!");
     } catch (error: any) {
-      console.error("Transaction Error:", error);
-      setStatusMessage(`Transaction failed: ${error?.message || "Transaction rejected"}`);
+      console.error("Transaction failed:", error);
+      setStatusMessage(`Transaction failed: ${error?.message || "User rejected"}`);
     } finally {
       setIsProcessing(false);
     }
@@ -124,12 +91,12 @@ export default function Home() {
         </div>
 
         <button
-          onClick={connectPetraWallet}
+          onClick={handleWalletAction}
           className="flex items-center gap-2 rounded-xl bg-teal-500 px-5 py-2.5 font-semibold text-slate-950 transition hover:bg-teal-400"
         >
           <Wallet className="h-4 w-4" />
-          {walletAddress 
-            ? `${walletAddress.slice(0, 6)}...${walletAddress.slice(-4)}` 
+          {connected && account
+            ? `${account.address.slice(0, 6)}...${account.address.slice(-4)}`
             : "Connect Petra Wallet"}
         </button>
       </header>
@@ -182,7 +149,7 @@ export default function Home() {
           </button>
         </div>
 
-        {/* TAB 1: SWAP & TESTNET TRANSACTIONS */}
+        {/* TAB 1: SWAP */}
         {activeTab === "trade" && (
           <div className="w-full max-w-md p-6 rounded-3xl bg-slate-900 border border-slate-800 shadow-2xl">
             <div className="flex justify-between items-center mb-4">
@@ -190,11 +157,10 @@ export default function Home() {
               <span className="text-xs bg-teal-500/10 text-teal-400 border border-teal-500/30 px-2.5 py-1 rounded-lg">Testnet</span>
             </div>
             
-            {/* Pay Input */}
             <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 mb-2">
               <div className="flex justify-between text-xs text-slate-400 mb-2">
                 <span>You Pay</span>
-                <span>Currency: APT / SBY Testnet</span>
+                <span>APT Testnet Coin</span>
               </div>
               <div className="flex items-center justify-between gap-2">
                 <input
@@ -211,7 +177,6 @@ export default function Home() {
               </div>
             </div>
 
-            {/* Receive Input */}
             <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 mb-6">
               <div className="flex justify-between text-xs text-slate-400 mb-2">
                 <span>You Receive (Estimated)</span>
@@ -291,10 +256,6 @@ export default function Home() {
       {/* FOOTER */}
       <footer className="border-t border-slate-800 pt-6 flex justify-between items-center text-xs text-slate-500">
         <p>© 2026 Shelby Protocol. All rights reserved.</p>
-        <div className="flex gap-4">
-          <span className="hover:text-slate-400 cursor-pointer">Docs</span>
-          <span className="hover:text-slate-400 cursor-pointer">Explorer</span>
-        </div>
       </footer>
     </div>
   );
