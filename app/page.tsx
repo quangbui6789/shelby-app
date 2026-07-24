@@ -12,7 +12,6 @@ export default function Home() {
   const [receiveAmount, setReceiveAmount] = useState("1.50");
   const [faucetAmount, setFaucetAmount] = useState("1");
   
-  // State quản lý số dư
   const [balance, setBalance] = useState<number>(10);
   const [isLoadingBalance, setIsLoadingBalance] = useState(false);
 
@@ -21,14 +20,11 @@ export default function Home() {
   const [isError, setIsError] = useState(false);
   const [txHash, setTxHash] = useState<string | null>(null);
 
-  // 1. Đồng bộ Số dư từ Ví
+  // Đọc balance thực tế từ ví Petra
   const fetchBalance = useCallback(async () => {
-    if (!account?.address) {
-      setBalance(10);
-      return;
-    }
-
+    if (!account?.address) return;
     setIsLoadingBalance(true);
+
     try {
       if (typeof window !== "undefined" && (window as any).aptos) {
         const petra = (window as any).aptos;
@@ -40,7 +36,7 @@ export default function Home() {
         }
       }
     } catch (err) {
-      console.log("Could not query balance directly from custom RPC, using active cached balance.");
+      console.warn("RPC query error, fallback to current balance");
     } finally {
       setIsLoadingBalance(false);
     }
@@ -52,7 +48,6 @@ export default function Home() {
     }
   }, [connected, account?.address, fetchBalance]);
 
-  // 2. Kết nối / Ngắt kết nối Ví
   const handleWalletAction = async () => {
     if (connected) {
       await disconnect();
@@ -72,41 +67,12 @@ export default function Home() {
         window.open("https://petra.app/", "_blank");
       }
     } catch (error: any) {
-      console.error("Wallet connection failed:", error);
       setStatusMessage(`Connection failed: ${error?.message || "User cancelled"}`);
       setIsError(true);
     }
   };
 
-  // 3. Faucet
-  const handleFaucet = async () => {
-    if (!connected || !account) {
-      alert("Please connect your Petra Wallet first!");
-      return;
-    }
-
-    setIsProcessing(true);
-    setStatusMessage("Processing Faucet request on Shelby Network...");
-    setIsError(false);
-    setTxHash(null);
-
-    try {
-      const amountToAdd = parseFloat(faucetAmount || "1");
-      const generatedHash = "0x" + Array.from({length: 64}, () => Math.floor(Math.random() * 16).toString(16)).join("");
-      
-      setBalance((prev) => parseFloat((prev + amountToAdd).toFixed(4)));
-      setTxHash(generatedHash);
-      setStatusMessage(`Successfully minted ${faucetAmount} APT to your wallet!`);
-      setIsError(false);
-    } catch (error: any) {
-      setStatusMessage("Faucet processing error.");
-      setIsError(true);
-    } finally {
-      setIsProcessing(false);
-    }
-  };
-
-  // 4. Xử lý Giao dịch (Gửi lệnh tới Ví Petra)
+  // ⚡ BẮT BUỘC BẬT POPUP CONFIRM CỦA VÍ PETRA ⚡
   const handleExecuteTransaction = async (overrideAmount?: number) => {
     if (!connected || !account) {
       alert("Please connect your Petra Wallet first!");
@@ -114,63 +80,73 @@ export default function Home() {
     }
 
     const amountToUse = overrideAmount || parseFloat(payAmount || "1");
-
     if (!amountToUse || amountToUse <= 0) {
       alert("Please enter a valid amount.");
       return;
     }
 
-    if (balance < amountToUse) {
-      setStatusMessage("Insufficient APT balance for this transaction!");
-      setIsError(true);
-      return;
-    }
-
     setIsProcessing(true);
-    setStatusMessage("Opening Petra Wallet for confirmation...");
+    setStatusMessage("Awaiting confirmation in Petra Wallet... Please approve the pop-up!");
     setIsError(false);
     setTxHash(null);
 
     try {
       const amountInOctas = Math.floor(amountToUse * 100000000);
-      let executedHash = "";
 
+      // Gọi trực tiếp Provider của Petra Extension để ép mở Pop-up Approve
       if (typeof window !== "undefined" && (window as any).aptos) {
         const petra = (window as any).aptos;
-        try {
-          // Bắt buộc mở Popup Confirm của Ví Petra
-          const response = await petra.signAndSubmitTransaction({
-            payload: {
-              type: "entry_function_payload",
-              function: "0x1::aptos_account::transfer",
-              type_arguments: [],
-              arguments: [account.address, amountInOctas.toString()],
-            },
-          });
-          executedHash = response?.hash || "0x" + Array.from({length: 64}, () => Math.floor(Math.random() * 16).toString(16)).join("");
-        } catch (petraErr: any) {
-          // Nếu người dùng chủ động bấm Cancel trên Ví
-          if (petraErr?.message?.includes("User rejected") || petraErr?.code === 4001) {
-            throw new Error("User rejected transaction in wallet");
-          }
-          // Nếu Node Custom Shelbynet từ chối Execution, thực hiện Fallback
-          executedHash = "0x" + Array.from({length: 64}, () => Math.floor(Math.random() * 16).toString(16)).join("");
-        }
-      } else {
-        executedHash = "0x" + Array.from({length: 64}, () => Math.floor(Math.random() * 16).toString(16)).join("");
-      }
 
-      setTxHash(executedHash);
-      setBalance((prev) => parseFloat((prev - amountToUse).toFixed(4)));
-      setStatusMessage(`Transaction executed successfully on Shelby Network!`);
-      setIsError(false);
+        // Cấu hình Payload chuẩn bắt buộc Ví Petra mở Popup Approve
+        const response = await petra.signAndSubmitTransaction({
+          payload: {
+            type: "entry_function_payload",
+            function: "0x1::aptos_account::transfer",
+            type_arguments: [],
+            arguments: [account.address, amountInOctas.toString()],
+          }
+        });
+
+        if (!response || !response.hash) {
+          throw new Error("Transaction rejected or failed on wallet.");
+        }
+
+        setTxHash(response.hash);
+        setStatusMessage("Transaction confirmed on-chain!");
+        setIsError(false);
+        
+        // Refresh lại số dư ví sau 1.5s
+        setTimeout(() => fetchBalance(), 1500);
+      } else {
+        // Dự phòng Wallet Adapter chuẩn
+        const res = await signAndSubmitTransaction({
+          data: {
+            function: "0x1::aptos_account::transfer",
+            typeArguments: [],
+            functionArguments: [account.address, amountInOctas],
+          },
+        } as any);
+
+        setTxHash(res.hash);
+        setStatusMessage("Transaction confirmed on-chain!");
+        setIsError(false);
+        setTimeout(() => fetchBalance(), 1500);
+      }
     } catch (error: any) {
-      console.error("Transaction Error:", error);
+      console.error("Petra Error:", error);
       setIsError(true);
-      setStatusMessage(`Transaction status: ${error?.message || "User cancelled"}`);
+      if (error?.message?.includes("User rejected") || error?.code === 4001) {
+        setStatusMessage("Transaction cancelled: You rejected the request in Petra Wallet.");
+      } else {
+        setStatusMessage(`On-Chain Error: ${error?.message || "Execution error on Shelbynet"}`);
+      }
     } finally {
       setIsProcessing(false);
     }
+  };
+
+  const handleFaucet = async () => {
+    handleExecuteTransaction(1);
   };
 
   return (
@@ -235,7 +211,7 @@ export default function Home() {
         </div>
       )}
 
-      {/* TABS KHÔI PHỤC ĐẦY ĐỦ */}
+      {/* TABS */}
       <main className="my-8 flex flex-col items-center">
         <div className="flex flex-wrap justify-center bg-slate-900 border border-slate-800 p-1.5 rounded-2xl mb-8 gap-1">
           <button
@@ -327,7 +303,7 @@ export default function Home() {
               className="w-full bg-teal-500 py-4 rounded-2xl font-bold text-slate-950 hover:bg-teal-400 transition disabled:opacity-50 flex items-center justify-center gap-2"
             >
               {isProcessing && <RefreshCw className="h-4 w-4 animate-spin" />}
-              {isProcessing ? "Confirming in Wallet..." : "Execute Testnet Swap"}
+              {isProcessing ? "Awaiting Petra Approval..." : "Execute Testnet Swap"}
             </button>
           </div>
         )}
@@ -361,7 +337,7 @@ export default function Home() {
               className="w-full bg-teal-500 py-4 rounded-2xl font-bold text-slate-950 hover:bg-teal-400 transition disabled:opacity-50 flex items-center justify-center gap-2"
             >
               {isProcessing && <RefreshCw className="h-4 w-4 animate-spin" />}
-              {isProcessing ? "Minting APT..." : "Claim Testnet APT"}
+              {isProcessing ? "Awaiting Petra Approval..." : "Claim Testnet APT"}
             </button>
           </div>
         )}
