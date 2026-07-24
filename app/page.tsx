@@ -8,7 +8,6 @@ import {
 } from "lucide-react";
 
 export default function Home() {
-  // Trích xuất signAndSubmitTransaction từ Wallet Standard Hook
   const { connect, disconnect, connected, account, wallets, signAndSubmitTransaction } = useWallet();
   
   const [activeTab, setActiveTab] = useState<"trade" | "faucet" | "staking" | "storage">("trade");
@@ -22,7 +21,7 @@ export default function Home() {
   const [isError, setIsError] = useState(false);
   const [txHash, setTxHash] = useState<string | null>(null);
 
-  // 1. KẾT NỐI VÍ PETRA (DÙNG WALLET STANDARD)
+  // KẾT NỐI VÍ PETRA
   const handleWalletAction = async () => {
     if (connected) {
       await disconnect();
@@ -47,9 +46,9 @@ export default function Home() {
     }
   };
 
-  // 2. TẠO GIAO DỊCH CHUẨN (KHÔNG DÙNG WINDOW.PETRA TRỰC TIẾP)
+  // THỰC THI GIAO DỊCH (SỬA DỨT ĐIỂM LỖI MULTISIGADDRESS)
   const handleExecuteTransaction = async (overrideAmount?: number) => {
-    if (!connected || !account) {
+    if (!connected || !account?.address) {
       alert("Please connect your Petra Wallet first!");
       return;
     }
@@ -68,17 +67,16 @@ export default function Home() {
     try {
       const amountInOctas = Math.floor(amountToUse * 100000000);
 
-      // Cấu trúc Payload chuẩn Aptos Input Transaction
-      const transactionPayload = {
+      // Cấu trúc đối tượng giao dịch chuẩn Aptos Wallet Adapter v2
+      // Bắt buộc có sender để tránh lỗi 'multisigAddress' in undefined
+      const response = await signAndSubmitTransaction({
+        sender: account.address,
         data: {
           function: "0x1::aptos_account::transfer",
           typeArguments: [],
           functionArguments: [account.address, amountInOctas.toString()],
-        }
-      };
-
-      // Gửi giao dịch qua signAndSubmitTransaction của Adapter Standard
-      const response = await signAndSubmitTransaction(transactionPayload as any);
+        },
+      });
 
       if (response && response.hash) {
         setTxHash(response.hash);
@@ -89,7 +87,7 @@ export default function Home() {
       }
 
     } catch (error: any) {
-      console.error("Standard Adapter Error:", error);
+      console.error("Transaction Error:", error);
       setIsError(true);
       
       const errMessage = error?.message || error?.toString() || "";
