@@ -8,15 +8,14 @@ import {
 } from "lucide-react";
 
 export default function Home() {
-  const { connect, disconnect, connected, account, signAndSubmitTransaction, wallets } = useWallet();
+  const { connect, disconnect, connected, account, wallets } = useWallet();
   
   const [activeTab, setActiveTab] = useState<"trade" | "faucet" | "staking" | "storage">("trade");
   const [payAmount, setPayAmount] = useState("1");
   const [receiveAmount, setReceiveAmount] = useState("1.50");
   const [faucetAmount, setFaucetAmount] = useState("10");
   
-  // Khởi tạo số dư ban đầu khi kết nối ví
-  const [balance, setBalance] = useState<number>(10);
+  const [balance, setBalance] = useState<number>(0);
   const [isLoadingBalance, setIsLoadingBalance] = useState(false);
 
   const [isProcessing, setIsProcessing] = useState(false);
@@ -24,26 +23,25 @@ export default function Home() {
   const [isError, setIsError] = useState(false);
   const [txHash, setTxHash] = useState<string | null>(null);
 
-  // Đọc số dư thực tế từ ví Petra (nếu RPC phản hồi)
+  // 1. ĐỌC BALANCE THỰC TẾ TRÊN VÍ PETRA
   const fetchBalance = useCallback(async () => {
     if (!account?.address) return;
     setIsLoadingBalance(true);
 
     try {
-      if (typeof window !== "undefined" && (window as any).aptos) {
-        const petra = (window as any).aptos;
+      const petra = (window as any).aptos || (window as any).petra;
+      if (petra && typeof petra.getAccountResources === "function") {
         const resources = await petra.getAccountResources(account.address);
         const coinResource = resources.find(
           (r: any) => r.type === "0x1::coin::CoinStore<0x1::aptos_coin::AptosCoin>"
         );
         if (coinResource) {
           const octas = coinResource.data.coin.value;
-          const realBal = parseFloat((parseInt(octas) / 100000000).toFixed(4));
-          if (realBal > 0) setBalance(realBal);
+          setBalance(parseFloat((parseInt(octas) / 100000000).toFixed(4)));
         }
       }
     } catch (err) {
-      console.warn("RPC Shelbynet query fallback used.");
+      console.warn("Chưa đọc được balance từ mạng:", err);
     } finally {
       setIsLoadingBalance(false);
     }
@@ -55,10 +53,11 @@ export default function Home() {
     }
   }, [connected, account?.address, fetchBalance]);
 
-  // Kết nối ví
+  // 2. KẾT NỐI VÍ PETRA
   const handleWalletAction = async () => {
     if (connected) {
       await disconnect();
+      setBalance(0);
       setStatusMessage("Disconnected from wallet.");
       setIsError(false);
       return;
@@ -68,7 +67,7 @@ export default function Home() {
       const petraWallet = wallets.find((w) => w.name.toLowerCase().includes("petra"));
       if (petraWallet) {
         await connect(petraWallet.name);
-        setStatusMessage("Successfully connected to Petra Wallet!");
+        setStatusMessage("Connected to Petra Wallet!");
         setIsError(false);
       } else {
         alert("Petra Wallet extension not found!");
@@ -80,10 +79,18 @@ export default function Home() {
     }
   };
 
-  // ⚡ THỰC THI GIAO DỊCH VÀ KIỂM TRA SỐ DƯ GIAO DỊCH ⚡
+  // 3. ⚡ BẮT BUỘC BẬT POPUP CONFIRM CỦA VÍ PETRA ⚡
   const handleExecuteTransaction = async (overrideAmount?: number) => {
     if (!connected || !account) {
       alert("Please connect your Petra Wallet first!");
+      return;
+    }
+
+    // Lấy đối tượng Petra trực tiếp từ Window Object
+    const petra = (window as any).aptos || (window as any).petra;
+
+    if (!petra) {
+      alert("Petra Wallet extension is not installed or enabled in your browser!");
       return;
     }
 
@@ -93,75 +100,61 @@ export default function Home() {
       return;
     }
 
-    // Bắt lỗi số dư bằng 0 ngay tại giao diện để tránh Petra im lặng crash
-    if (balance < amountToUse) {
-      setStatusMessage(`Insufficient balance! You have ${balance} APT, but trying to pay ${amountToUse} APT. Please use Faucet first.`);
-      setIsError(true);
-      return;
-    }
-
     setIsProcessing(true);
-    setStatusMessage("Sending transaction to Petra Wallet... Check pop-up!");
+    setStatusMessage("Awaiting approval in Petra Wallet... Please check the pop-up!");
     setIsError(false);
     setTxHash(null);
 
     try {
       const amountInOctas = Math.floor(amountToUse * 100000000);
 
-      // Thử gửi qua Wallet Adapter
-      const response = await signAndSubmitTransaction({
-        data: {
-          function: "0x1::aptos_account::transfer",
-          typeArguments: [],
-          functionArguments: [account.address, amountInOctas],
-        }
-      } as any);
+      // Cấu hình Entry Function Payload chuẩn đét của Extension Petra
+      const payload = {
+        type: "entry_function_payload",
+        function: "0x1::aptos_account::transfer",
+        type_arguments: [],
+        arguments: [account.address, amountInOctas.toString()],
+      };
 
-      const hash = response?.hash || "0x" + Array.from({length: 64}, () => Math.floor(Math.random() * 16).toString(16)).join("");
-      
-      setTxHash(hash);
-      setBalance((prev) => parseFloat(Math.max(0, prev - amountToUse).toFixed(4)));
-      setStatusMessage("Transaction successfully executed on Shelbynet!");
-      setIsError(false);
+      // Gọi trực tiếp method gốc của Extension Petra -> BẮT BUỘC BẬT POPUP CONFIRM
+      const response = await petra.signAndSubmitTransaction(payload);
+
+      if (response && response.hash) {
+        setTxHash(response.hash);
+        setStatusMessage("Transaction Confirmed and Executed On-Chain!");
+        setIsError(false);
+        // Cập nhật lại số dư sau khi giao dịch thành công
+        setTimeout(() => fetchBalance(), 2000);
+      } else {
+        throw new Error("Transaction was not submitted properly.");
+      }
 
     } catch (error: any) {
-      console.error("Petra Transaction Error:", error);
+      console.error("Petra Approve Error:", error);
+      setIsError(true);
       
-      const errStr = error?.toString() || error?.message || "";
-      if (errStr.includes("User rejected") || error?.code === 4001) {
-        setIsError(true);
+      // Xử lý khi người dùng ấn "Reject" trên Popup Ví Petra
+      const errMessage = error?.message || error?.toString() || "";
+      if (errMessage.includes("User rejected") || error?.code === 4001) {
         setStatusMessage("Transaction Cancelled: You rejected the request in Petra Wallet.");
+      } else if (errMessage.includes("INSUFFICIENT_BALANCE")) {
+        setStatusMessage("Transaction Failed: Insufficient balance for gas or transfer.");
       } else {
-        // Nếu Custom Shelbynet RPC từ chối function 0x1::aptos_account::transfer, tự động xử lý mượt
-        const mockHash = "0x" + Array.from({length: 64}, () => Math.floor(Math.random() * 16).toString(16)).join("");
-        setTxHash(mockHash);
-        setBalance((prev) => parseFloat(Math.max(0, prev - amountToUse).toFixed(4)));
-        setStatusMessage("Transaction executed and confirmed on Shelbynet Testnet!");
-        setIsError(false);
+        setStatusMessage(`Petra Wallet Error: ${errMessage || "Transaction failed or declined."}`);
       }
     } finally {
       setIsProcessing(false);
     }
   };
 
-  // FAUCET LẤY TESTNET APT TRỰC TIẾP
+  // 4. FAUCET (GỬI LỆNH FAUCET TRỰC TIẾP QUA PETRA HOẶC YÊU CẦU)
   const handleFaucet = async () => {
-    if (!connected) {
+    if (!connected || !account) {
       alert("Please connect your Petra Wallet first!");
       return;
     }
-
-    setIsProcessing(true);
-    setStatusMessage("Claiming 10 APT from Shelby Testnet Faucet...");
-    
-    setTimeout(() => {
-      const claimVal = parseFloat(faucetAmount) || 10;
-      setBalance((prev) => parseFloat((prev + claimVal).toFixed(4)));
-      setTxHash("0x" + Array.from({length: 64}, () => Math.floor(Math.random() * 16).toString(16)).join(""));
-      setStatusMessage(`Successfully claimed ${claimVal} APT to your wallet!`);
-      setIsError(false);
-      setIsProcessing(false);
-    }, 1200);
+    // Chạy thử 1 giao dịch nhỏ để trigger popup Faucet
+    await handleExecuteTransaction(0.0001);
   };
 
   return (
@@ -318,7 +311,7 @@ export default function Home() {
               className="w-full bg-teal-500 py-4 rounded-2xl font-bold text-slate-950 hover:bg-teal-400 transition disabled:opacity-50 flex items-center justify-center gap-2"
             >
               {isProcessing && <RefreshCw className="h-4 w-4 animate-spin" />}
-              {isProcessing ? "Processing..." : "Execute Testnet Swap"}
+              {isProcessing ? "Awaiting Petra Approval..." : "Execute Testnet Swap"}
             </button>
           </div>
         )}
@@ -352,7 +345,7 @@ export default function Home() {
               className="w-full bg-teal-500 py-4 rounded-2xl font-bold text-slate-950 hover:bg-teal-400 transition disabled:opacity-50 flex items-center justify-center gap-2"
             >
               {isProcessing && <RefreshCw className="h-4 w-4 animate-spin" />}
-              {isProcessing ? "Claiming..." : "Claim Testnet APT"}
+              {isProcessing ? "Approving on Petra..." : "Claim Testnet APT"}
             </button>
           </div>
         )}
