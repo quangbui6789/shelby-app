@@ -1,4 +1,4 @@
-"use client";
+"use "use client";
 
 import { useState, useEffect, useCallback } from "react";
 import { useWallet } from "@aptos-labs/wallet-adapter-react";
@@ -8,53 +8,21 @@ import {
 } from "lucide-react";
 
 export default function Home() {
-  const { connect, disconnect, connected, account, wallets } = useWallet();
+  // Trích xuất signAndSubmitTransaction từ Wallet Standard Hook
+  const { connect, disconnect, connected, account, wallets, signAndSubmitTransaction } = useWallet();
   
   const [activeTab, setActiveTab] = useState<"trade" | "faucet" | "staking" | "storage">("trade");
   const [payAmount, setPayAmount] = useState("1");
   const [receiveAmount, setReceiveAmount] = useState("1.50");
   const [faucetAmount, setFaucetAmount] = useState("10");
   
-  const [balance, setBalance] = useState<string>("10"); // Mặc định hiển thị phù hợp
-  const [isLoadingBalance, setIsLoadingBalance] = useState(false);
-
+  const [balance, setBalance] = useState<string>("10");
   const [isProcessing, setIsProcessing] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [isError, setIsError] = useState(false);
   const [txHash, setTxHash] = useState<string | null>(null);
 
-  // 1. ĐỌC BALANCE TRỰC TIẾP TỪ VÍ PETRA (SHELB YNET CUSTOM NETWORK)
-  const fetchBalance = useCallback(async () => {
-    if (!account?.address) return;
-    setIsLoadingBalance(true);
-
-    try {
-      const provider = (window as any).aptos;
-      if (provider) {
-        // Lấy danh sách Account Resources trực tiếp từ Node mà Petra đang kết nối (Shelbynet)
-        const resources = await provider.getAccountResources(account.address);
-        const coinResource = resources?.find(
-          (r: any) => r.type === "0x1::coin::CoinStore<0x1::aptos_coin::AptosCoin>"
-        );
-        if (coinResource) {
-          const val = coinResource.data.coin.value;
-          setBalance((parseInt(val) / 100000000).toFixed(2));
-        }
-      }
-    } catch (err) {
-      console.warn("RPC query fallback to wallet state:", err);
-    } finally {
-      setIsLoadingBalance(false);
-    }
-  }, [account?.address]);
-
-  useEffect(() => {
-    if (connected && account?.address) {
-      fetchBalance();
-    }
-  }, [connected, account?.address, fetchBalance]);
-
-  // 2. KẾT NỐI VÍ PETRA
+  // 1. KẾT NỐI VÍ PETRA (DÙNG WALLET STANDARD)
   const handleWalletAction = async () => {
     if (connected) {
       await disconnect();
@@ -67,7 +35,7 @@ export default function Home() {
       const petraWallet = wallets.find((w) => w.name.toLowerCase().includes("petra"));
       if (petraWallet) {
         await connect(petraWallet.name);
-        setStatusMessage("Connected to Petra Wallet on Shelbynet!");
+        setStatusMessage("Connected via Aptos Wallet Standard!");
         setIsError(false);
       } else {
         alert("Petra Wallet extension not found!");
@@ -79,16 +47,10 @@ export default function Home() {
     }
   };
 
-  // 3. ⚡ BẮT BUỘC BẬT POPUP APPROVE/CONFIRM (DỪNG BÁO LỖI MULTISIG) ⚡
+  // 2. TẠO GIAO DỊCH CHUẨN (KHÔNG DÙNG WINDOW.PETRA NỮA)
   const handleExecuteTransaction = async (overrideAmount?: number) => {
     if (!connected || !account) {
       alert("Please connect your Petra Wallet first!");
-      return;
-    }
-
-    const provider = (window as any).aptos;
-    if (!provider) {
-      alert("Petra Wallet extension is not active!");
       return;
     }
 
@@ -99,49 +61,42 @@ export default function Home() {
     }
 
     setIsProcessing(true);
-    setStatusMessage("Awaiting approval in Petra Wallet... Check pop-up!");
+    setStatusMessage("Awaiting confirmation in Petra Wallet...");
     setIsError(false);
     setTxHash(null);
 
     try {
       const amountInOctas = Math.floor(amountToUse * 100000000);
 
-      // Payload định dạng chuẩn tương thích Custom Networks / Shelbynet trên Extension Petra
-      const payload = {
-        type: "entry_function_payload",
-        function: "0x1::aptos_account::transfer",
-        type_arguments: [],
-        arguments: [account.address, amountInOctas.toString()],
+      // Cấu trúc Payload chuẩn Aptos Input
+      const transactionPayload = {
+        data: {
+          function: "0x1::aptos_account::transfer",
+          typeArguments: [],
+          functionArguments: [account.address, amountInOctas.toString()],
+        }
       };
 
-      // Tùy chọn giao dịch giúp tránh lỗi undefined trên Adapter Custom
-      const options = {
-        max_gas_amount: "20000",
-      };
-
-      // Gửi trực tiếp thông qua Petra Provider -> BẮT BUỘC MỞ POPUP CONFIRM
-      const response = await provider.signAndSubmitTransaction(payload, options);
+      // Gửi giao dịch qua signAndSubmitTransaction của Adapter Standard
+      const response = await signAndSubmitTransaction(transactionPayload as any);
 
       if (response && response.hash) {
         setTxHash(response.hash);
-        setStatusMessage("Transaction Approved and Executed On-Chain on Shelbynet!");
+        setStatusMessage("Transaction Approved & Executed On-Chain via Shelby!");
         setIsError(false);
-        setTimeout(() => fetchBalance(), 1500);
       } else {
         throw new Error("No transaction hash returned.");
       }
 
     } catch (error: any) {
-      console.error("Petra Approve Error:", error);
+      console.error("Standard Adapter Error:", error);
       setIsError(true);
       
       const errMessage = error?.message || error?.toString() || "";
-      if (errMessage.includes("User rejected") || errMessage.includes("rejected") || error?.code === 4001) {
+      if (errMessage.includes("rejected") || error?.code === 4001) {
         setStatusMessage("Transaction Cancelled: You rejected the request in Petra Wallet.");
-      } else if (errMessage.includes("INSUFFICIENT_BALANCE") || errMessage.includes("balance")) {
-        setStatusMessage("Transaction Failed: Insufficient APT balance on Shelbynet.");
       } else {
-        setStatusMessage(`Petra Error: ${errMessage || "Transaction declined."}`);
+        setStatusMessage(`Error: ${errMessage || "Transaction failed."}`);
       }
     } finally {
       setIsProcessing(false);
@@ -167,12 +122,7 @@ export default function Home() {
             <div className="flex items-center gap-2 bg-slate-900 border border-slate-800 px-4 py-2 rounded-xl text-xs font-semibold">
               <Coins className="h-4 w-4 text-teal-400" />
               <span className="text-slate-400">Balance:</span>
-              <span className="text-teal-300 font-mono">
-                {isLoadingBalance ? "Loading..." : `${balance} APT`}
-              </span>
-              <button onClick={fetchBalance} title="Refresh balance" className="ml-1 text-slate-500 hover:text-teal-400">
-                <RefreshCw className={`h-3 w-3 ${isLoadingBalance ? "animate-spin" : ""}`} />
-              </button>
+              <span className="text-teal-300 font-mono">{balance} APT</span>
             </div>
           )}
 
@@ -210,7 +160,7 @@ export default function Home() {
         </div>
       )}
 
-      {/* TABS */}
+      {/* MAIN TABS */}
       <main className="my-8 flex flex-col items-center">
         <div className="flex flex-wrap justify-center bg-slate-900 border border-slate-800 p-1.5 rounded-2xl mb-8 gap-1">
           <button
@@ -302,7 +252,7 @@ export default function Home() {
               className="w-full bg-teal-500 py-4 rounded-2xl font-bold text-slate-950 hover:bg-teal-400 transition disabled:opacity-50 flex items-center justify-center gap-2"
             >
               {isProcessing && <RefreshCw className="h-4 w-4 animate-spin" />}
-              {isProcessing ? "Awaiting Petra Approval..." : "Execute Testnet Swap"}
+              {isProcessing ? "Confirming on Petra..." : "Execute Testnet Swap"}
             </button>
           </div>
         )}
@@ -336,7 +286,7 @@ export default function Home() {
               className="w-full bg-teal-500 py-4 rounded-2xl font-bold text-slate-950 hover:bg-teal-400 transition disabled:opacity-50 flex items-center justify-center gap-2"
             >
               {isProcessing && <RefreshCw className="h-4 w-4 animate-spin" />}
-              {isProcessing ? "Approving on Petra..." : "Claim Testnet APT"}
+              {isProcessing ? "Confirming on Petra..." : "Claim Testnet APT"}
             </button>
           </div>
         )}
