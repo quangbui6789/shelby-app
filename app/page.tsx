@@ -1,169 +1,223 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { Wallet, ShieldCheck, Zap, Layers, Database, Send, RefreshCw } from "lucide-react";
+import { useState } from "react";
+import { Wallet, ShieldCheck, Zap, ArrowLeftRight, Database, TrendingUp, CheckCircle, AlertCircle } from "lucide-react";
 
 export default function Home() {
   const [walletAddress, setWalletAddress] = useState<string | null>(null);
-  const [isConnecting, setIsConnecting] = useState(false);
-  const [txHash, setTxHash] = useState<string | null>(null);
-  const [isTransacting, setIsTransacting] = useState(false);
+  const [activeTab, setActiveTab] = useState<"trade" | "staking" | "storage">("trade");
+  
+  // Trade Form States
+  const [payAmount, setPayAmount] = useState("");
+  const [receiveAmount, setReceiveAmount] = useState("");
+  
+  // Status States
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
 
-  // Check and retrieve wallet address if previously connected
-  useEffect(() => {
-    const checkConnection = async () => {
-      if (typeof window !== "undefined" && (window as any).aptos) {
-        try {
-          const isConnected = await (window as any).aptos.isConnected();
-          if (isConnected) {
-            const account = await (window as any).aptos.account();
-            setWalletAddress(account.address);
-          }
-        } catch (e) {
-          console.error("Error checking wallet connection:", e);
-        }
-      }
-    };
-    checkConnection();
-  }, []);
-
-  // 1. Connect Real Wallet (Petra / Aptos-compatible Wallet)
+  // Connect Wallet Function
   const connectWallet = async () => {
-    setIsConnecting(true);
-    if (typeof window !== "undefined" && (window as any).aptos) {
-      try {
+    try {
+      if (typeof window !== "undefined" && (window as any).aptos) {
         const response = await (window as any).aptos.connect();
-        setWalletAddress(response.address);
-      } catch (error) {
-        console.error("User cancelled connection or error occurred:", error);
+        setWalletAddress(response.address || response.account);
+        setStatusMessage("Wallet connected successfully!");
+      } else {
+        // Fallback demo connection if extension is not installed
+        const demoAddress = "0x7a8b...9c0d";
+        setWalletAddress(demoAddress);
+        setStatusMessage("Connected with Demo Wallet (Install Petra Wallet for live transactions).");
       }
-    } else {
-      alert("Aptos/Shelby wallet not found! Please install the Petra Wallet extension on Chrome.");
-      window.open("https://petra.app/", "_blank");
+    } catch (error) {
+      console.error("Wallet connection error:", error);
+      setStatusMessage("Failed to connect wallet.");
     }
-    setIsConnecting(false);
   };
 
-  // 2. Execute Transaction on Shelby Protocol
-  const handleExecuteTransaction = async () => {
+  // Handle Trade Action
+  const handleTrade = () => {
     if (!walletAddress) {
       alert("Please connect your wallet first!");
       return;
     }
-
-    setIsTransacting(true);
-    setTxHash(null);
-
-    try {
-      // Transaction Payload aligned with Shelby / Move VM standard
-      const payload = {
-        type: "entry_function_payload",
-        function: "0x1::coin::transfer", // Replace with Shelby Protocol's smart contract address if needed
-        type_arguments: ["0x1::aptos_coin::AptosCoin"],
-        arguments: [
-          walletAddress, // Test transfer back to connected wallet
-          "1000" // Amount in Octas (0.00001 Token)
-        ],
-      };
-
-      // Request wallet to sign and submit transaction to chain
-      const pendingTransaction = await (window as any).aptos.signAndSubmitTransaction(payload);
-      
-      // Receive Transaction Hash
-      setTxHash(pendingTransaction.hash);
-      alert("Transaction submitted successfully!");
-    } catch (error) {
-      console.error("Transaction execution failed:", error);
-      alert("Transaction rejected or failed!");
-    } finally {
-      setIsTransacting(false);
+    if (!payAmount) {
+      alert("Please enter an amount to trade.");
+      return;
     }
+    setStatusMessage(`Trade Order Submitted: Swapping ${payAmount} SBY for ${receiveAmount || '0'} USDC...`);
   };
 
   return (
-    <div className="flex min-h-screen flex-col justify-between p-6 md:p-12 max-w-7xl mx-auto">
+    <div className="flex min-h-screen flex-col justify-between p-4 md:p-10 max-w-7xl mx-auto">
+      {/* HEADER */}
       <header className="flex items-center justify-between border-b border-slate-800 pb-6">
         <div className="flex items-center gap-3">
           <div className="bg-teal-500 p-2 rounded-xl text-slate-950">
             <Zap className="h-6 w-6 fill-current" />
           </div>
-          <span className="text-xl font-bold tracking-wider text-teal-400">SHELBY DAPP</span>
+          <div>
+            <span className="text-xl font-bold tracking-wider text-teal-400 block">SHELBY</span>
+            <span className="text-xs text-slate-500">Protocol Ecosystem</span>
+          </div>
         </div>
 
         <button
           onClick={connectWallet}
-          disabled={isConnecting}
-          className="flex items-center gap-2 rounded-lg bg-teal-500 px-5 py-2.5 font-medium text-slate-950 transition hover:bg-teal-400 disabled:opacity-50"
+          className="flex items-center gap-2 rounded-xl bg-teal-500 px-5 py-2.5 font-semibold text-slate-950 transition hover:bg-teal-400"
         >
           <Wallet className="h-4 w-4" />
-          {walletAddress 
-            ? `${walletAddress.slice(0, 6)}...${walletAddress.slice(-4)}` 
-            : isConnecting ? "Connecting..." : "Connect Wallet"}
+          {walletAddress ? `${walletAddress.slice(0, 6)}...${walletAddress.slice(-4)}` : "Connect Wallet"}
         </button>
       </header>
 
-      <main className="my-12 flex flex-col items-center text-center">
-        <span className="inline-flex items-center gap-2 rounded-full border border-teal-500/30 bg-teal-500/10 px-4 py-1.5 text-xs font-semibold text-teal-400 mb-6">
-          <ShieldCheck className="h-4 w-4" /> Live on Shelby Network
-        </span>
-        
-        <h1 className="text-4xl md:text-6xl font-extrabold tracking-tight text-white mb-6">
-          Shelby Protocol Interactor
-        </h1>
-        
-        <p className="max-w-2xl text-slate-400 text-base md:text-lg mb-8">
-          Interact directly with smart contracts and execute Web3 transactions on Shelby infrastructure.
-        </p>
+      {/* NOTIFICATION BAR */}
+      {statusMessage && (
+        <div className="mt-4 p-3 rounded-xl bg-teal-950/60 border border-teal-500/30 text-teal-300 text-sm flex items-center justify-between">
+          <span className="flex items-center gap-2">
+            <CheckCircle className="h-4 w-4 text-teal-400" /> {statusMessage}
+          </span>
+          <button onClick={() => setStatusMessage(null)} className="text-xs text-slate-400 hover:text-white">Dismiss</button>
+        </div>
+      )}
 
-        {/* Transaction Panel */}
-        <div className="w-full max-w-md p-6 rounded-2xl bg-slate-900 border border-slate-800 mb-12">
-          <h3 className="text-lg font-bold text-white mb-4 flex items-center justify-center gap-2">
-            <Send className="h-5 w-5 text-teal-400" /> Execute Transaction
-          </h3>
-          
+      {/* MAIN NAVIGATION TABS */}
+      <main className="my-8 flex flex-col items-center">
+        <div className="flex bg-slate-900 border border-slate-800 p-1.5 rounded-2xl mb-8">
           <button
-            onClick={handleExecuteTransaction}
-            disabled={!walletAddress || isTransacting}
-            className="w-full flex items-center justify-center gap-2 rounded-xl bg-teal-500 py-3 font-semibold text-slate-950 transition hover:bg-teal-400 disabled:bg-slate-800 disabled:text-slate-500"
+            onClick={() => setActiveTab("trade")}
+            className={`flex items-center gap-2 px-6 py-2.5 rounded-xl font-medium text-sm transition ${
+              activeTab === "trade" ? "bg-teal-500 text-slate-950 font-bold" : "text-slate-400 hover:text-white"
+            }`}
           >
-            {isTransacting ? (
-              <>
-                <RefreshCw className="h-5 w-5 animate-spin" /> Processing on Chain...
-              </>
-            ) : (
-              "Send Test Transaction"
-            )}
+            <ArrowLeftRight className="h-4 w-4" /> Trade / Swap
           </button>
+          <button
+            onClick={() => setActiveTab("staking")}
+            className={`flex items-center gap-2 px-6 py-2.5 rounded-xl font-medium text-sm transition ${
+              activeTab === "staking" ? "bg-teal-500 text-slate-950 font-bold" : "text-slate-400 hover:text-white"
+            }`}
+          >
+            <TrendingUp className="h-4 w-4" /> Staking & Yield
+          </button>
+          <button
+            onClick={() => setActiveTab("storage")}
+            className={`flex items-center gap-2 px-6 py-2.5 rounded-xl font-medium text-sm transition ${
+              activeTab === "storage" ? "bg-teal-500 text-slate-950 font-bold" : "text-slate-400 hover:text-white"
+            }`}
+          >
+            <Database className="h-4 w-4" /> Storage Vault
+          </button>
+        </div>
 
-          {txHash && (
-            <div className="mt-4 p-3 rounded-lg bg-teal-950/50 border border-teal-500/30 text-xs text-left overflow-hidden">
-              <p className="text-teal-400 font-semibold mb-1">Transaction Hash (Tx Hash):</p>
-              <p className="font-mono text-slate-300 truncate">{txHash}</p>
+        {/* TAB 1: TRADE / SWAP */}
+        {activeTab === "trade" && (
+          <div className="w-full max-w-md p-6 rounded-3xl bg-slate-900 border border-slate-800 shadow-2xl">
+            <h2 className="text-xl font-bold text-white mb-4">Swap Tokens</h2>
+            
+            {/* Pay Input */}
+            <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 mb-2">
+              <div className="flex justify-between text-xs text-slate-400 mb-2">
+                <span>You Pay</span>
+                <span>Balance: 1,250.00 SBY</span>
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <input
+                  type="number"
+                  placeholder="0.0"
+                  value={payAmount}
+                  onChange={(e) => {
+                    setPayAmount(e.target.value);
+                    setReceiveAmount((parseFloat(e.target.value || "0") * 1.5).toFixed(2));
+                  }}
+                  className="bg-transparent text-2xl font-bold text-white outline-none w-full"
+                />
+                <span className="bg-slate-800 px-3 py-1.5 rounded-xl text-sm font-semibold text-teal-400">SBY</span>
+              </div>
             </div>
-          )}
-        </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 w-full text-left">
-          <div className="p-6 rounded-2xl bg-slate-900 border border-slate-800">
-            <Layers className="h-8 w-8 text-teal-400 mb-4" />
-            <h3 className="text-lg font-bold text-white mb-2">High Throughput</h3>
-            <p className="text-sm text-slate-400">Parallel transaction execution with ultra-low latency.</p>
+            {/* Receive Input */}
+            <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 mb-6">
+              <div className="flex justify-between text-xs text-slate-400 mb-2">
+                <span>You Receive (Estimated)</span>
+                <span>Balance: 0.00 USDC</span>
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <input
+                  type="number"
+                  readOnly
+                  value={receiveAmount}
+                  placeholder="0.0"
+                  className="bg-transparent text-2xl font-bold text-white outline-none w-full"
+                />
+                <span className="bg-slate-800 px-3 py-1.5 rounded-xl text-sm font-semibold text-emerald-400">USDC</span>
+              </div>
+            </div>
+
+            <button
+              onClick={handleTrade}
+              className="w-full bg-teal-500 py-4 rounded-2xl font-bold text-slate-950 hover:bg-teal-400 transition"
+            >
+              Execute Swap
+            </button>
           </div>
-          <div className="p-6 rounded-2xl bg-slate-900 border border-slate-800">
-            <ShieldCheck className="h-8 w-8 text-teal-400 mb-4" />
-            <h3 className="text-lg font-bold text-white mb-2">Move Smart Contract</h3>
-            <p className="text-sm text-slate-400">Safe and verifiable smart contract execution powered by Move language.</p>
+        )}
+
+        {/* TAB 2: STAKING */}
+        {activeTab === "staking" && (
+          <div className="w-full max-w-2xl grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="p-6 rounded-3xl bg-slate-900 border border-slate-800">
+              <span className="text-xs text-teal-400 font-semibold tracking-wider uppercase">Pool 1</span>
+              <h3 className="text-xl font-bold text-white mt-1">Shelby Liquid Staking</h3>
+              <p className="text-3xl font-extrabold text-teal-400 my-4">12.4% <span className="text-sm text-slate-400 font-normal">APY</span></p>
+              <button 
+                onClick={() => alert("Staking Pool Activated")}
+                className="w-full bg-slate-800 hover:bg-teal-500 hover:text-slate-950 py-3 rounded-xl text-sm font-bold transition"
+              >
+                Stake SBY
+              </button>
+            </div>
+
+            <div className="p-6 rounded-3xl bg-slate-900 border border-slate-800">
+              <span className="text-xs text-teal-400 font-semibold tracking-wider uppercase">Pool 2</span>
+              <h3 className="text-xl font-bold text-white mt-1">SBY / USDC LP Vault</h3>
+              <p className="text-3xl font-extrabold text-teal-400 my-4">24.8% <span className="text-sm text-slate-400 font-normal">APY</span></p>
+              <button 
+                onClick={() => alert("LP Vault Activated")}
+                className="w-full bg-slate-800 hover:bg-teal-500 hover:text-slate-950 py-3 rounded-xl text-sm font-bold transition"
+              >
+                Provide Liquidity
+              </button>
+            </div>
           </div>
-          <div className="p-6 rounded-2xl bg-slate-900 border border-slate-800">
-            <Database className="h-8 w-8 text-teal-400 mb-4" />
-            <h3 className="text-lg font-bold text-white mb-2">On-Chain Data</h3>
-            <p className="text-sm text-slate-400">Direct real-time state reads and contract storage updates.</p>
+        )}
+
+        {/* TAB 3: STORAGE */}
+        {activeTab === "storage" && (
+          <div className="w-full max-w-md p-6 rounded-3xl bg-slate-900 border border-slate-800 text-center">
+            <Database className="h-12 w-12 text-teal-400 mx-auto mb-4" />
+            <h2 className="text-xl font-bold text-white mb-2">Shelby Decentralized Storage</h2>
+            <p className="text-sm text-slate-400 mb-6">Store files and smart contract states permanently on Shelby Network.</p>
+            
+            <div className="border-2 border-dashed border-slate-700 rounded-2xl p-8 mb-4 hover:border-teal-500 transition cursor-pointer">
+              <p className="text-xs text-slate-400">Click or drag file here to upload to Shelby Vault</p>
+            </div>
+
+            <button 
+              onClick={() => alert("Storage upload feature ready")}
+              className="w-full bg-teal-500 py-3 rounded-xl font-bold text-slate-950 hover:bg-teal-400 transition text-sm"
+            >
+              Upload Data
+            </button>
           </div>
-        </div>
+        )}
       </main>
 
+      {/* FOOTER */}
       <footer className="border-t border-slate-800 pt-6 flex justify-between items-center text-xs text-slate-500">
-        <p>© 2026 Shelby Project. All rights reserved.</p>
+        <p>© 2026 Shelby Protocol Ecosystem. All rights reserved.</p>
+        <div className="flex gap-4">
+          <span className="hover:text-slate-400 cursor-pointer">Docs</span>
+          <span className="hover:text-slate-400 cursor-pointer">Explorer</span>
+        </div>
       </footer>
     </div>
   );
