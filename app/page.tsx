@@ -1,30 +1,68 @@
 "use client";
 
-import { useState } from "react";
-import { useWallet } from "@aptos-labs/wallet-adapter-react";
+import { useState, useEffect, useCallback } from "react";
+import { useWallet, InputTransactionData } from "@aptos-labs/wallet-adapter-react";
 import { 
   Wallet, Zap, ArrowLeftRight, Database, TrendingUp, 
   CheckCircle, Droplet, RefreshCw, AlertCircle, Coins 
 } from "lucide-react";
 
 export default function Home() {
-  // Lấy hàm signAndSubmitTransaction chuẩn từ Aptos Wallet Adapter Hook
   const { connect, disconnect, connected, account, wallets, signAndSubmitTransaction } = useWallet();
   
   const [activeTab, setActiveTab] = useState<"trade" | "faucet" | "staking" | "storage">("trade");
   const [payAmount, setPayAmount] = useState("1");
   const [receiveAmount, setReceiveAmount] = useState("1.50");
   const [faucetAmount, setFaucetAmount] = useState("10");
+  
+  const [balance, setBalance] = useState<string>("0");
+  const [isLoadingBalance, setIsLoadingBalance] = useState(false);
 
   const [isProcessing, setIsProcessing] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [isError, setIsError] = useState(false);
   const [txHash, setTxHash] = useState<string | null>(null);
 
-  // KẾT NỐI VÍ PETRA
+  // 1. LẤY BALANCE THỰC TẾ TỪ VÍ PETRA VIA WINDOW STANDARD
+  const fetchBalance = useCallback(async () => {
+    if (!account?.address) return;
+    setIsLoadingBalance(true);
+
+    try {
+      // Dùng Aptos Standard Provider
+      const provider = (window as any).aptos;
+      if (provider && typeof provider.account === "function") {
+        const res = await provider.account();
+        if (res) {
+          // Lấy resource trực tiếp
+          const resources = await provider.getAccountResources(account.address);
+          const coinResource = resources?.find(
+            (r: any) => r.type === "0x1::coin::CoinStore<0x1::aptos_coin::AptosCoin>"
+          );
+          if (coinResource) {
+            const val = coinResource.data.coin.value;
+            setBalance((parseInt(val) / 100000000).toFixed(4));
+          }
+        }
+      }
+    } catch (err) {
+      console.warn("Could not fetch balance from RPC:", err);
+    } finally {
+      setIsLoadingBalance(false);
+    }
+  }, [account?.address]);
+
+  useEffect(() => {
+    if (connected && account?.address) {
+      fetchBalance();
+    }
+  }, [connected, account?.address, fetchBalance]);
+
+  // 2. KẾT NỐI VÍ
   const handleWalletAction = async () => {
     if (connected) {
       await disconnect();
+      setBalance("0");
       setStatusMessage("Disconnected from wallet.");
       setIsError(false);
       return;
@@ -46,7 +84,7 @@ export default function Home() {
     }
   };
 
-  // ⚡ BẮT BUỘC BẬT POPUP APPROVE/CONFIRM TỪ VÍ PETRA ⚡
+  // 3. ⚡ BẮT BUỘC POPUP CONFIRM CỦA PETRA V2 (SỬA LỖI MULTISIGADDRESS) ⚡
   const handleExecuteTransaction = async (overrideAmount?: number) => {
     if (!connected || !account) {
       alert("Please connect your Petra Wallet first!");
@@ -60,28 +98,35 @@ export default function Home() {
     }
 
     setIsProcessing(true);
-    setStatusMessage("Awaiting approval in Petra Wallet... Please confirm the pop-up!");
+    setStatusMessage("Awaiting approval in Petra Wallet... Check popup!");
     setIsError(false);
     setTxHash(null);
 
     try {
       const amountInOctas = Math.floor(amountToUse * 100000000);
 
-      // Cấu trúc payload theo chuẩn Aptos Wallet Standard (AIP-62)
-      const response = await signAndSubmitTransaction({
+      // Cấu trúc InputTransactionData đầy đủ - bổ sung options trống để tránh lỗi multisigAddress
+      const transactionPayload: InputTransactionData = {
         data: {
           function: "0x1::aptos_account::transfer",
           typeArguments: [],
           functionArguments: [account.address, amountInOctas],
         },
-      });
+        options: {
+          maxGasAmount: 20000,
+        },
+      };
+
+      // Gửi giao dịch sang Adapter
+      const response = await signAndSubmitTransaction(transactionPayload);
 
       if (response && response.hash) {
         setTxHash(response.hash);
         setStatusMessage("Transaction Approved and Executed On-Chain!");
         setIsError(false);
+        setTimeout(() => fetchBalance(), 2000);
       } else {
-        throw new Error("Transaction was not submitted properly.");
+        throw new Error("No hash returned.");
       }
 
     } catch (error: any) {
@@ -91,17 +136,17 @@ export default function Home() {
       const errMessage = error?.message || error?.toString() || "";
       if (errMessage.includes("User rejected") || errMessage.includes("rejected") || error?.code === 4001) {
         setStatusMessage("Transaction Cancelled: You rejected the request in Petra Wallet.");
-      } else if (errMessage.includes("INSUFFICIENT_BALANCE")) {
+      } else if (errMessage.includes("INSUFFICIENT_BALANCE") || errMessage.includes("balance")) {
         setStatusMessage("Transaction Failed: Insufficient APT balance for gas fee or transfer.");
       } else {
-        setStatusMessage(`Petra Wallet Error: ${errMessage || "Transaction failed or declined."}`);
+        setStatusMessage(`Petra Error: ${errMessage}`);
       }
     } finally {
       setIsProcessing(false);
     }
   };
 
-  // FAUCET ACTION
+  // 4. FAUCET (NẾU CẦN THỬ TRONG NỘI BỘ)
   const handleFaucet = async () => {
     if (!connected || !account) {
       alert("Please connect your Petra Wallet first!");
@@ -125,6 +170,19 @@ export default function Home() {
         </div>
 
         <div className="flex items-center gap-3">
+          {connected && (
+            <div className="flex items-center gap-2 bg-slate-900 border border-slate-800 px-4 py-2 rounded-xl text-xs font-semibold">
+              <Coins className="h-4 w-4 text-teal-400" />
+              <span className="text-slate-400">Balance:</span>
+              <span className="text-teal-300 font-mono">
+                {isLoadingBalance ? "Loading..." : `${balance} APT`}
+              </span>
+              <button onClick={fetchBalance} title="Refresh balance" className="ml-1 text-slate-500 hover:text-teal-400">
+                <RefreshCw className={`h-3 w-3 ${isLoadingBalance ? "animate-spin" : ""}`} />
+              </button>
+            </div>
+          )}
+
           <button
             onClick={handleWalletAction}
             className="flex items-center gap-2 rounded-xl bg-teal-500 px-5 py-2.5 font-semibold text-slate-950 transition hover:bg-teal-400"
@@ -210,6 +268,9 @@ export default function Home() {
             <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 mb-2">
               <div className="flex justify-between text-xs text-slate-400 mb-2">
                 <span>You Pay</span>
+                <span className="text-teal-400 font-mono">
+                  Balance: {connected ? `${balance} APT` : "Not Connected"}
+                </span>
               </div>
               <div className="flex items-center justify-between gap-2">
                 <input
@@ -263,6 +324,7 @@ export default function Home() {
             <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 mb-6 text-left">
               <div className="flex justify-between text-xs text-slate-400 mb-2">
                 <span>Amount to Claim</span>
+                <span className="text-teal-400 font-mono">Current: {balance} APT</span>
               </div>
               <div className="flex items-center justify-between">
                 <input
