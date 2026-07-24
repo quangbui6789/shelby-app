@@ -1,6 +1,6 @@
-"use "use client";
+"use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState } from "react";
 import { useWallet } from "@aptos-labs/wallet-adapter-react";
 import { 
   Wallet, Zap, ArrowLeftRight, Database, TrendingUp, 
@@ -16,7 +16,7 @@ export default function Home() {
   const [receiveAmount, setReceiveAmount] = useState("1.50");
   const [faucetAmount, setFaucetAmount] = useState("10");
   
-  const [balance, setBalance] = useState<string>("10");
+  const [balance] = useState<string>("10");
   const [isProcessing, setIsProcessing] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [isError, setIsError] = useState(false);
@@ -47,7 +47,7 @@ export default function Home() {
     }
   };
 
-  // 2. TẠO GIAO DỊCH CHUẨN (KHÔNG DÙNG WINDOW.PETRA NỮA)
+  // 2. TẠO GIAO DỊCH CHUẨN (KHÔNG DÙNG WINDOW.PETRA TRỰC TIẾP)
   const handleExecuteTransaction = async (overrideAmount?: number) => {
     if (!connected || !account) {
       alert("Please connect your Petra Wallet first!");
@@ -68,7 +68,7 @@ export default function Home() {
     try {
       const amountInOctas = Math.floor(amountToUse * 100000000);
 
-      // Cấu trúc Payload chuẩn Aptos Input
+      // Cấu trúc Payload chuẩn Aptos Input Transaction
       const transactionPayload = {
         data: {
           function: "0x1::aptos_account::transfer",
