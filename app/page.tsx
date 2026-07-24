@@ -1,49 +1,117 @@
 "use client";
 
-import { useState } from "react";
-import { Wallet, ShieldCheck, Zap, ArrowLeftRight, Database, TrendingUp, CheckCircle, AlertCircle } from "lucide-react";
+import { useState, useEffect } from "react";
+import { Wallet, ShieldCheck, Zap, ArrowLeftRight, Database, TrendingUp, CheckCircle, ExternalLink } from "lucide-react";
 
 export default function Home() {
   const [walletAddress, setWalletAddress] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"trade" | "staking" | "storage">("trade");
   
-  // Trade Form States
+  // Trade States
   const [payAmount, setPayAmount] = useState("");
   const [receiveAmount, setReceiveAmount] = useState("");
+  const [isProcessing, setIsProcessing] = useState(false);
   
-  // Status States
+  // Transaction Feedback
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [txHash, setTxHash] = useState<string | null>(null);
 
-  // Connect Wallet Function
-  const connectWallet = async () => {
-    try {
-      if (typeof window !== "undefined" && (window as any).aptos) {
-        const response = await (window as any).aptos.connect();
-        setWalletAddress(response.address || response.account);
-        setStatusMessage("Wallet connected successfully!");
-      } else {
-        // Fallback demo connection if extension is not installed
-        const demoAddress = "0x7a8b...9c0d";
-        setWalletAddress(demoAddress);
-        setStatusMessage("Connected with Demo Wallet (Install Petra Wallet for live transactions).");
+  // Helper lấy Petra Provider chuẩn
+  const getPetraProvider = () => {
+    if (typeof window !== "undefined") {
+      if ("petra" in window) {
+        return (window as any).petra;
       }
-    } catch (error) {
-      console.error("Wallet connection error:", error);
-      setStatusMessage("Failed to connect wallet.");
+      if ("aptos" in window) {
+        return (window as any).aptos;
+      }
+    }
+    return null;
+  };
+
+  // 1. Kiểm tra ví đã kết nối trước đó chưa
+  useEffect(() => {
+    const checkAutoConnect = async () => {
+      const wallet = getPetraProvider();
+      if (wallet) {
+        try {
+          const isConnected = await wallet.isConnected();
+          if (isConnected) {
+            const account = await wallet.account();
+            setWalletAddress(account.address);
+          }
+        } catch (err) {
+          console.error("Auto connect error:", err);
+        }
+      }
+    };
+    checkAutoConnect();
+  }, []);
+
+  // 2. Hàm Kết nối Ví Petra Thực tế
+  const connectPetraWallet = async () => {
+    const wallet = getPetraProvider();
+    
+    if (!wallet) {
+      alert("Petra Wallet not detected! Redirecting to Petra installation...");
+      window.open("https://petra.app/", "_blank");
+      return;
+    }
+
+    try {
+      const response = await wallet.connect();
+      // Petra trả về object chứa address
+      const accountAddress = response.address || (await wallet.account()).address;
+      setWalletAddress(accountAddress);
+      setStatusMessage("Petra Wallet connected successfully!");
+    } catch (error: any) {
+      console.error("Petra Connection Error:", error);
+      setStatusMessage(`Connection failed: ${error?.message || "User rejected connection"}`);
     }
   };
 
-  // Handle Trade Action
-  const handleTrade = () => {
-    if (!walletAddress) {
-      alert("Please connect your wallet first!");
+  // 3. Hàm Thực hiện Giao dịch Thực tế trên Shelby Network
+  const handleExecuteTransaction = async () => {
+    const wallet = getPetraProvider();
+
+    if (!walletAddress || !wallet) {
+      alert("Please connect your Petra wallet first!");
       return;
     }
-    if (!payAmount) {
-      alert("Please enter an amount to trade.");
+    if (!payAmount || parseFloat(payAmount) <= 0) {
+      alert("Please enter a valid amount to swap.");
       return;
     }
-    setStatusMessage(`Trade Order Submitted: Swapping ${payAmount} SBY for ${receiveAmount || '0'} USDC...`);
+
+    setIsProcessing(true);
+    setStatusMessage("Awaiting approval in Petra Wallet...");
+    setTxHash(null);
+
+    try {
+      // Cấu hình Payload Giao dịch chuẩn Move VM cho Shelby / Aptos Core
+      const payload = {
+        type: "entry_function_payload",
+        function: "0x1::coin::transfer", // Hàm chuyển Coin mặc định trên Shelby / Move VM
+        type_arguments: ["0x1::aptos_coin::AptosCoin"],
+        arguments: [
+          walletAddress, // Gửi thử nghiệm về lại chính ví người dùng
+          (parseFloat(payAmount) * 100000000).toString(), // Chuyển đổi sang Octas (decimals = 8)
+        ],
+      };
+
+      // Gọi Petra ký và gửi Transaction lên On-Chain
+      const pendingTransaction = await wallet.signAndSubmitTransaction(payload);
+      
+      // Nhận Transaction Hash thực
+      const hash = pendingTransaction.hash || pendingTransaction;
+      setTxHash(hash);
+      setStatusMessage("Transaction submitted successfully to Shelby Network!");
+    } catch (error: any) {
+      console.error("Transaction Error:", error);
+      setStatusMessage(`Transaction failed: ${error?.message || "User rejected transaction"}`);
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   return (
@@ -61,25 +129,36 @@ export default function Home() {
         </div>
 
         <button
-          onClick={connectWallet}
+          onClick={connectPetraWallet}
           className="flex items-center gap-2 rounded-xl bg-teal-500 px-5 py-2.5 font-semibold text-slate-950 transition hover:bg-teal-400"
         >
           <Wallet className="h-4 w-4" />
-          {walletAddress ? `${walletAddress.slice(0, 6)}...${walletAddress.slice(-4)}` : "Connect Wallet"}
+          {walletAddress 
+            ? `${walletAddress.slice(0, 6)}...${walletAddress.slice(-4)}` 
+            : "Connect Petra Wallet"}
         </button>
       </header>
 
-      {/* NOTIFICATION BAR */}
+      {/* NOTIFICATION & TX HASH DISPLAY */}
       {statusMessage && (
-        <div className="mt-4 p-3 rounded-xl bg-teal-950/60 border border-teal-500/30 text-teal-300 text-sm flex items-center justify-between">
-          <span className="flex items-center gap-2">
-            <CheckCircle className="h-4 w-4 text-teal-400" /> {statusMessage}
-          </span>
-          <button onClick={() => setStatusMessage(null)} className="text-xs text-slate-400 hover:text-white">Dismiss</button>
+        <div className="mt-4 p-4 rounded-xl bg-slate-900 border border-teal-500/30 text-teal-300 text-sm">
+          <div className="flex items-center justify-between mb-1">
+            <span className="flex items-center gap-2 font-medium">
+              <CheckCircle className="h-4 w-4 text-teal-400" /> {statusMessage}
+            </span>
+            <button onClick={() => setStatusMessage(null)} className="text-xs text-slate-400 hover:text-white">Dismiss</button>
+          </div>
+
+          {txHash && (
+            <div className="mt-2 pt-2 border-t border-slate-800 flex items-center gap-2 text-xs font-mono text-slate-400">
+              <span>Tx Hash:</span>
+              <span className="text-teal-400 truncate max-w-xs">{txHash}</span>
+            </div>
+          )}
         </div>
       )}
 
-      {/* MAIN NAVIGATION TABS */}
+      {/* NAVIGATION TABS */}
       <main className="my-8 flex flex-col items-center">
         <div className="flex bg-slate-900 border border-slate-800 p-1.5 rounded-2xl mb-8">
           <button
@@ -108,16 +187,16 @@ export default function Home() {
           </button>
         </div>
 
-        {/* TAB 1: TRADE / SWAP */}
+        {/* TAB 1: SWAP & LIVE ON-CHAIN TRANSACTION */}
         {activeTab === "trade" && (
           <div className="w-full max-w-md p-6 rounded-3xl bg-slate-900 border border-slate-800 shadow-2xl">
-            <h2 className="text-xl font-bold text-white mb-4">Swap Tokens</h2>
+            <h2 className="text-xl font-bold text-white mb-4">Swap on Shelby</h2>
             
             {/* Pay Input */}
             <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 mb-2">
               <div className="flex justify-between text-xs text-slate-400 mb-2">
                 <span>You Pay</span>
-                <span>Balance: 1,250.00 SBY</span>
+                <span>Balance: Connected</span>
               </div>
               <div className="flex items-center justify-between gap-2">
                 <input
@@ -138,7 +217,6 @@ export default function Home() {
             <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 mb-6">
               <div className="flex justify-between text-xs text-slate-400 mb-2">
                 <span>You Receive (Estimated)</span>
-                <span>Balance: 0.00 USDC</span>
               </div>
               <div className="flex items-center justify-between gap-2">
                 <input
@@ -153,10 +231,11 @@ export default function Home() {
             </div>
 
             <button
-              onClick={handleTrade}
-              className="w-full bg-teal-500 py-4 rounded-2xl font-bold text-slate-950 hover:bg-teal-400 transition"
+              onClick={handleExecuteTransaction}
+              disabled={isProcessing}
+              className="w-full bg-teal-500 py-4 rounded-2xl font-bold text-slate-950 hover:bg-teal-400 transition disabled:opacity-50"
             >
-              Execute Swap
+              {isProcessing ? "Processing in Petra..." : "Execute Swap Transaction"}
             </button>
           </div>
         )}
@@ -166,10 +245,10 @@ export default function Home() {
           <div className="w-full max-w-2xl grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="p-6 rounded-3xl bg-slate-900 border border-slate-800">
               <span className="text-xs text-teal-400 font-semibold tracking-wider uppercase">Pool 1</span>
-              <h3 className="text-xl font-bold text-white mt-1">Shelby Liquid Staking</h3>
+              <h3 className="text-xl font-bold text-white mt-1">Shelby Staking</h3>
               <p className="text-3xl font-extrabold text-teal-400 my-4">12.4% <span className="text-sm text-slate-400 font-normal">APY</span></p>
               <button 
-                onClick={() => alert("Staking Pool Activated")}
+                onClick={handleExecuteTransaction}
                 className="w-full bg-slate-800 hover:bg-teal-500 hover:text-slate-950 py-3 rounded-xl text-sm font-bold transition"
               >
                 Stake SBY
@@ -178,13 +257,13 @@ export default function Home() {
 
             <div className="p-6 rounded-3xl bg-slate-900 border border-slate-800">
               <span className="text-xs text-teal-400 font-semibold tracking-wider uppercase">Pool 2</span>
-              <h3 className="text-xl font-bold text-white mt-1">SBY / USDC LP Vault</h3>
+              <h3 className="text-xl font-bold text-white mt-1">Shelby Liquidity Vault</h3>
               <p className="text-3xl font-extrabold text-teal-400 my-4">24.8% <span className="text-sm text-slate-400 font-normal">APY</span></p>
               <button 
-                onClick={() => alert("LP Vault Activated")}
+                onClick={handleExecuteTransaction}
                 className="w-full bg-slate-800 hover:bg-teal-500 hover:text-slate-950 py-3 rounded-xl text-sm font-bold transition"
               >
-                Provide Liquidity
+                Deposit Liquidity
               </button>
             </div>
           </div>
@@ -194,18 +273,18 @@ export default function Home() {
         {activeTab === "storage" && (
           <div className="w-full max-w-md p-6 rounded-3xl bg-slate-900 border border-slate-800 text-center">
             <Database className="h-12 w-12 text-teal-400 mx-auto mb-4" />
-            <h2 className="text-xl font-bold text-white mb-2">Shelby Decentralized Storage</h2>
-            <p className="text-sm text-slate-400 mb-6">Store files and smart contract states permanently on Shelby Network.</p>
+            <h2 className="text-xl font-bold text-white mb-2">Shelby Data Storage</h2>
+            <p className="text-sm text-slate-400 mb-6">Permanent decentralized data storage on Shelby Network.</p>
             
             <div className="border-2 border-dashed border-slate-700 rounded-2xl p-8 mb-4 hover:border-teal-500 transition cursor-pointer">
-              <p className="text-xs text-slate-400">Click or drag file here to upload to Shelby Vault</p>
+              <p className="text-xs text-slate-400">Click to upload file payload onto Shelby Chain</p>
             </div>
 
             <button 
-              onClick={() => alert("Storage upload feature ready")}
+              onClick={handleExecuteTransaction}
               className="w-full bg-teal-500 py-3 rounded-xl font-bold text-slate-950 hover:bg-teal-400 transition text-sm"
             >
-              Upload Data
+              Commit Data On-Chain
             </button>
           </div>
         )}
@@ -213,7 +292,7 @@ export default function Home() {
 
       {/* FOOTER */}
       <footer className="border-t border-slate-800 pt-6 flex justify-between items-center text-xs text-slate-500">
-        <p>© 2026 Shelby Protocol Ecosystem. All rights reserved.</p>
+        <p>© 2026 Shelby Protocol. All rights reserved.</p>
         <div className="flex gap-4">
           <span className="hover:text-slate-400 cursor-pointer">Docs</span>
           <span className="hover:text-slate-400 cursor-pointer">Explorer</span>
