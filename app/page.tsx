@@ -9,7 +9,7 @@ export default function Home() {
   const [txHash, setTxHash] = useState<string | null>(null);
   const [isTransacting, setIsTransacting] = useState(false);
 
-  // Kiểm tra và lấy địa chỉ ví nếu đã kết nối từ trước
+  // Check and retrieve wallet address if previously connected
   useEffect(() => {
     const checkConnection = async () => {
       if (typeof window !== "undefined" && (window as any).aptos) {
@@ -20,14 +20,14 @@ export default function Home() {
             setWalletAddress(account.address);
           }
         } catch (e) {
-          console.error("Lỗi kiểm tra kết nối ví:", e);
+          console.error("Error checking wallet connection:", e);
         }
       }
     };
     checkConnection();
   }, []);
 
-  // 1. Hàm Kết nối Ví Thực tế (Petra / Aptos-compatible Wallet)
+  // 1. Connect Real Wallet (Petra / Aptos-compatible Wallet)
   const connectWallet = async () => {
     setIsConnecting(true);
     if (typeof window !== "undefined" && (window as any).aptos) {
@@ -35,19 +35,19 @@ export default function Home() {
         const response = await (window as any).aptos.connect();
         setWalletAddress(response.address);
       } catch (error) {
-        console.error("Người dùng hủy kết nối hoặc lỗi:", error);
+        console.error("User cancelled connection or error occurred:", error);
       }
     } else {
-      alert("Không tìm thấy ví Aptos/Shelby! Vui lòng cài đặt tiện ích Petra Wallet trên Chrome.");
+      alert("Aptos/Shelby wallet not found! Please install the Petra Wallet extension on Chrome.");
       window.open("https://petra.app/", "_blank");
     }
     setIsConnecting(false);
   };
 
-  // 2. Hàm Thực hiện Giao dịch (Execute Transaction on Shelby Protocol)
+  // 2. Execute Transaction on Shelby Protocol
   const handleExecuteTransaction = async () => {
     if (!walletAddress) {
-      alert("Vui lòng kết nối ví trước!");
+      alert("Please connect your wallet first!");
       return;
     }
 
@@ -55,26 +55,26 @@ export default function Home() {
     setTxHash(null);
 
     try {
-      // Cấu hình Payload giao dịch theo chuẩn Shelby / Move VM
+      // Transaction Payload aligned with Shelby / Move VM standard
       const payload = {
         type: "entry_function_payload",
-        function: "0x1::coin::transfer", // Bạn có thể thay bằng Smart Contract Address chính thức của Shelby
+        function: "0x1::coin::transfer", // Replace with Shelby Protocol's smart contract address if needed
         type_arguments: ["0x1::aptos_coin::AptosCoin"],
         arguments: [
-          walletAddress, // Gửi thử nghiệm về chính ví người dùng (hoặc địa chỉ Shelby Protocol)
-          "1000" // Số lượng Octas (0.00001 Token)
+          walletAddress, // Test transfer back to connected wallet
+          "1000" // Amount in Octas (0.00001 Token)
         ],
       };
 
-      // Yêu cầu ví ký và gửi giao dịch lên Chain
+      // Request wallet to sign and submit transaction to chain
       const pendingTransaction = await (window as any).aptos.signAndSubmitTransaction(payload);
       
-      // Nhận về Transaction Hash
+      // Receive Transaction Hash
       setTxHash(pendingTransaction.hash);
-      alert("Gửi giao dịch thành công!");
+      alert("Transaction submitted successfully!");
     } catch (error) {
-      console.error("Thực thi giao dịch thất bại:", error);
-      alert("Giao dịch bị hủy hoặc lỗi!");
+      console.error("Transaction execution failed:", error);
+      alert("Transaction rejected or failed!");
     } finally {
       setIsTransacting(false);
     }
@@ -98,7 +98,7 @@ export default function Home() {
           <Wallet className="h-4 w-4" />
           {walletAddress 
             ? `${walletAddress.slice(0, 6)}...${walletAddress.slice(-4)}` 
-            : isConnecting ? "Đang kết nối..." : "Connect Wallet"}
+            : isConnecting ? "Connecting..." : "Connect Wallet"}
         </button>
       </header>
 
@@ -112,13 +112,13 @@ export default function Home() {
         </h1>
         
         <p className="max-w-2xl text-slate-400 text-base md:text-lg mb-8">
-          Tương tác trực tiếp với Smart Contracts và thực hiện các giao dịch Web3 trên hạ tầng Shelby.
+          Interact directly with smart contracts and execute Web3 transactions on Shelby infrastructure.
         </p>
 
-        {/* Khung tương tác giao dịch thực tế */}
+        {/* Transaction Panel */}
         <div className="w-full max-w-md p-6 rounded-2xl bg-slate-900 border border-slate-800 mb-12">
           <h3 className="text-lg font-bold text-white mb-4 flex items-center justify-center gap-2">
-            <Send className="h-5 w-5 text-teal-400" /> Thực hiện Giao dịch
+            <Send className="h-5 w-5 text-teal-400" /> Execute Transaction
           </h3>
           
           <button
@@ -128,16 +128,16 @@ export default function Home() {
           >
             {isTransacting ? (
               <>
-                <RefreshCw className="h-5 w-5 animate-spin" /> Đang xử lý trên Chain...
+                <RefreshCw className="h-5 w-5 animate-spin" /> Processing on Chain...
               </>
             ) : (
-              "Gửi Giao Dịch Thử Nghiệm"
+              "Send Test Transaction"
             )}
           </button>
 
           {txHash && (
             <div className="mt-4 p-3 rounded-lg bg-teal-950/50 border border-teal-500/30 text-xs text-left overflow-hidden">
-              <p className="text-teal-400 font-semibold mb-1">Mã Giao Dịch (Tx Hash):</p>
+              <p className="text-teal-400 font-semibold mb-1">Transaction Hash (Tx Hash):</p>
               <p className="font-mono text-slate-300 truncate">{txHash}</p>
             </div>
           )}
@@ -147,17 +147,17 @@ export default function Home() {
           <div className="p-6 rounded-2xl bg-slate-900 border border-slate-800">
             <Layers className="h-8 w-8 text-teal-400 mb-4" />
             <h3 className="text-lg font-bold text-white mb-2">High Throughput</h3>
-            <p className="text-sm text-slate-400">Tốc độ xử lý giao dịch song song với độ trễ thấp.</p>
+            <p className="text-sm text-slate-400">Parallel transaction execution with ultra-low latency.</p>
           </div>
           <div className="p-6 rounded-2xl bg-slate-900 border border-slate-800">
             <ShieldCheck className="h-8 w-8 text-teal-400 mb-4" />
             <h3 className="text-lg font-bold text-white mb-2">Move Smart Contract</h3>
-            <p className="text-sm text-slate-400">Thực thi hợp đồng thông minh an toàn dựa trên ngôn ngữ Move.</p>
+            <p className="text-sm text-slate-400">Safe and verifiable smart contract execution powered by Move language.</p>
           </div>
           <div className="p-6 rounded-2xl bg-slate-900 border border-slate-800">
             <Database className="h-8 w-8 text-teal-400 mb-4" />
             <h3 className="text-lg font-bold text-white mb-2">On-Chain Data</h3>
-            <p className="text-sm text-slate-400">Đọc và ghi trạng thái hợp đồng trực tiếp thời gian thực.</p>
+            <p className="text-sm text-slate-400">Direct real-time state reads and contract storage updates.</p>
           </div>
         </div>
       </main>
