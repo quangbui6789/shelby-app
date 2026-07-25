@@ -9,7 +9,6 @@ import {
   CheckCircle, Droplet, RefreshCw, AlertCircle, Coins 
 } from "lucide-react";
 
-// Khởi tạo Aptos SDK v2 Client
 const aptosConfig = new AptosConfig({ network: Network.TESTNET });
 const aptos = new Aptos(aptosConfig);
 
@@ -28,7 +27,7 @@ export default function Home() {
   const [txHash, setTxHash] = useState<string | null>(null);
   const [, setShelbyClient] = useState<ShelbyClient | null>(null);
 
-  // 1. Khởi tạo Shelby Browser Client đúng tài liệu Shelby Docs
+  // 1. Khởi tạo Shelby Browser SDK
   useEffect(() => {
     try {
       const client = new ShelbyClient({
@@ -41,26 +40,23 @@ export default function Home() {
     }
   }, []);
 
-  // 2. Fetch Balance chính xác từ On-Chain Resource (khắc phục lỗi trả về 0 APT)
+  // 2. Fetch Balance chính xác qua Aptos REST API & SDK Resource
   const fetchBalance = useCallback(async () => {
     if (!account?.address) return;
     try {
-      // Đọc tài khoản trực tiếp qua Aptos CoinStore Resource
       const resource = await aptos.getAccountResource<{ coin: { value: string } }>({
         accountAddress: account.address,
         resourceType: "0x1::coin::CoinStore<0x1::aptos_coin::AptosCoin>",
       });
 
       if (resource?.coin?.value) {
-        const val = Number(resource.coin.value) / 100000000;
-        setBalance(val.toString());
+        setBalance((Number(resource.coin.value) / 100000000).toString());
       } else {
         const amount = await aptos.getAccountAPTAmount({ accountAddress: account.address });
         setBalance((amount / 100000000).toString());
       }
     } catch (err) {
-      console.error("Error fetching balance:", err);
-      // Fallback lấy dữ liệu RPC
+      console.error("SDK fetch balance failed, trying REST API fallback:", err);
       try {
         const response = await fetch(
           `https://api.testnet.aptoslabs.com/v1/accounts/${account.address}/resource/0x1::coin::CoinStore<0x1::aptos_coin::AptosCoin>`
@@ -84,7 +80,7 @@ export default function Home() {
     }
   }, [connected, account, fetchBalance]);
 
-  // 3. Xử lý Kết nối ví
+  // 3. Kết nối Ví
   const handleWalletAction = async () => {
     if (connected) {
       await disconnect();
@@ -111,7 +107,7 @@ export default function Home() {
     }
   };
 
-  // 4. Thực thi Giao dịch tuân thủ Aptos Standard (Không bị cảnh báo Deprecated)
+  // 4. Thực thi Giao dịch (Tự động hỗ trợ cả Payload v1 & v2 để tránh lỗi multisig)
   const handleExecuteTransaction = async (overrideAmount?: number) => {
     if (!connected || !account?.address) {
       alert("Please connect your Petra Wallet first!");
@@ -130,18 +126,36 @@ export default function Home() {
     setTxHash(null);
 
     try {
-      const amountInOctas = BigInt(Math.floor(amountToUse * 100000000));
+      const amountInOctas = Math.floor(amountToUse * 100000000);
       const recipientAddress = "0x0000000000000000000000000000000000000000000000000000000000000001";
 
-      // Chuẩn Payload v2 không gây lỗi multisig
-      const response = await signAndSubmitTransaction({
-        sender: account.address,
-        data: {
-          function: "0x1::aptos_account::transfer",
-          typeArguments: [],
-          functionArguments: [recipientAddress, amountInOctas],
-        },
-      });
+      let response: any;
+
+      // Thử thực thi theo chuẩn v2
+      try {
+        response = await signAndSubmitTransaction({
+          sender: account.address,
+          data: {
+            function: "0x1::aptos_account::transfer",
+            typeArguments: [],
+            functionArguments: [recipientAddress, BigInt(amountInOctas)],
+          },
+        } as any);
+      } catch (v2Err: any) {
+        // Fallback thực thi theo chuẩn v1 nếu Adapter cũ yêu cầu
+        if (v2Err?.message?.includes("multisigAddress") || v2Err?.toString()?.includes("multisigAddress")) {
+          response = await signAndSubmitTransaction({
+            payload: {
+              type: "entry_function_payload",
+              function: "0x1::aptos_account::transfer",
+              type_arguments: [],
+              arguments: [recipientAddress, amountInOctas.toString()],
+            }
+          } as any);
+        } else {
+          throw v2Err;
+        }
+      }
 
       if (response && response.hash) {
         setTxHash(response.hash);
