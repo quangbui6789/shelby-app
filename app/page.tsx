@@ -1,7 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useWallet } from "@aptos-labs/wallet-adapter-react";
+import { Network } from "@aptos-labs/ts-sdk";
+import { ShelbyClient } from "@shelby-protocol/sdk/browser";
 import { 
   Wallet, Zap, ArrowLeftRight, Database, TrendingUp, 
   CheckCircle, Droplet, RefreshCw, AlertCircle, Coins 
@@ -20,6 +22,20 @@ export default function Home() {
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [isError, setIsError] = useState(false);
   const [txHash, setTxHash] = useState<string | null>(null);
+  const [shelbyClient, setShelbyClient] = useState<ShelbyClient | null>(null);
+
+  // Khởi tạo Shelby Browser Client theo Doc
+  useEffect(() => {
+    try {
+      const client = new ShelbyClient({
+        network: Network.TESTNET,
+        apiKey: "aptoslabs_testnet",
+      });
+      setShelbyClient(client);
+    } catch (e) {
+      console.error("Shelby Client Init Error:", e);
+    }
+  }, []);
 
   // KẾT NỐI VÍ PETRA
   const handleWalletAction = async () => {
@@ -34,7 +50,7 @@ export default function Home() {
       const petraWallet = wallets.find((w) => w.name.toLowerCase().includes("petra"));
       if (petraWallet) {
         await connect(petraWallet.name);
-        setStatusMessage("Connected via Aptos Wallet Standard!");
+        setStatusMessage("Connected via Petra Wallet!");
         setIsError(false);
       } else {
         alert("Petra Wallet extension not found!");
@@ -46,7 +62,7 @@ export default function Home() {
     }
   };
 
-  // THỰC THI GIAO DỊCH
+  // THỰC THI GIAO DỊCH CHUẨN WALLET ADAPTER V2
   const handleExecuteTransaction = async (overrideAmount?: number) => {
     if (!connected || !account?.address) {
       alert("Please connect your Petra Wallet first!");
@@ -69,17 +85,16 @@ export default function Home() {
       const recipientAddress = "0x1";
 
       const response = await signAndSubmitTransaction({
-        sender: account.address,
         data: {
           function: "0x1::aptos_account::transfer",
           typeArguments: [],
-          functionArguments: [recipientAddress, amountInOctas.toString()],
+          functionArguments: [recipientAddress, amountInOctas],
         },
-      } as any);
+      });
 
       if (response && response.hash) {
         setTxHash(response.hash);
-        setStatusMessage("Transaction Approved & Executed On-Chain via Shelby!");
+        setStatusMessage("Transaction Approved & Executed On Shelbynet!");
         setIsError(false);
       } else {
         throw new Error("No transaction hash returned.");
@@ -110,7 +125,7 @@ export default function Home() {
           </div>
           <div>
             <span className="text-xl font-bold tracking-wider text-teal-400 block">SHELBY</span>
-            <span className="text-xs text-slate-500">Testnet Ecosystem</span>
+            <span className="text-xs text-slate-500">Shelbynet Ecosystem</span>
           </div>
         </div>
 
@@ -324,10 +339,10 @@ export default function Home() {
           <div className="w-full max-w-md p-6 rounded-3xl bg-slate-900 border border-slate-800 text-center">
             <Database className="h-12 w-12 text-teal-400 mx-auto mb-4" />
             <h2 className="text-xl font-bold text-white mb-2">Shelby Storage Vault</h2>
-            <p className="text-sm text-slate-400 mb-4">Store data permanently on Shelby Testnet.</p>
+            <p className="text-sm text-slate-400 mb-4">Store data permanently on Shelbynet.</p>
             
             <div className="border-2 border-dashed border-slate-700 rounded-2xl p-8 mb-4 hover:border-teal-500 transition cursor-pointer">
-              <p className="text-xs text-slate-400">Click to upload payload onto Shelby Network</p>
+              <p className="text-xs text-slate-400">Click to upload blob payload onto Shelby Network</p>
             </div>
 
             <button 
