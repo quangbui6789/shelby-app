@@ -1,14 +1,20 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { useWallet } from "@aptos-labs/wallet-adapter-react";
+import { useWallet, InputTransactionData } from "@aptos-labs/wallet-adapter-react";
+import { Network, Aptos, AptosConfig } from "@aptos-labs/ts-sdk";
+import { ShelbyClient } from "@shelby-protocol/sdk/browser";
 import { 
   Wallet, Zap, ArrowLeftRight, Database, TrendingUp, 
   CheckCircle, Droplet, RefreshCw, AlertCircle, Coins 
 } from "lucide-react";
 
+// Khởi tạo Aptos SDK v2
+const aptosConfig = new AptosConfig({ network: Network.TESTNET });
+const aptos = new Aptos(aptosConfig);
+
 export default function Home() {
-  const { connect, disconnect, connected, account, wallets } = useWallet();
+  const { connect, disconnect, connected, account, wallets, signAndSubmitTransaction } = useWallet();
 
   const [activeTab, setActiveTab] = useState<"trade" | "faucet" | "staking" | "storage">("trade");
   const [payAmount, setPayAmount] = useState("0.1");
@@ -21,16 +27,26 @@ export default function Home() {
   const [isError, setIsError] = useState(false);
   const [txHash, setTxHash] = useState<string | null>(null);
 
-  // 1. Lấy số dư trực tiếp từ Aptos Testnet REST API
+  // 1. Khởi tạo Shelby Client
+  useEffect(() => {
+    try {
+      new ShelbyClient({
+        network: Network.TESTNET,
+        apiKey: process.env.NEXT_PUBLIC_SHELBY_API_KEY || "aptoslabs_demo",
+      });
+    } catch (err) {
+      console.error("Shelby Client Init Error:", err);
+    }
+  }, []);
+
+  // 2. Fetch số dư APT từ REST API
   const fetchBalance = useCallback(async () => {
     if (!account?.address) {
       setBalance("0");
       return;
     }
 
-    const addrStr = typeof account.address === "string" 
-      ? account.address 
-      : (account.address as any).toString();
+    const addrStr = account.address.toString();
 
     try {
       const res = await fetch(
@@ -59,7 +75,7 @@ export default function Home() {
     }
   }, [connected, account, fetchBalance]);
 
-  // 2. Kết nối / Ngắt kết nối ví
+  // 3. Xử lý kết nối ví
   const handleWalletAction = async () => {
     if (connected) {
       await disconnect();
@@ -86,7 +102,7 @@ export default function Home() {
     }
   };
 
-  // 3. Thực thi giao dịch trực tiếp qua Provider Petra (Không qua Adapter wrapper lỗi)
+  // 4. Thực thi Giao Dịch Chuẩn Aptos Wallet Standard (AIP-62)
   const handleExecuteTransaction = async (overrideAmount?: number) => {
     if (!connected || !account?.address) {
       alert("Please connect your Petra Wallet first!");
@@ -108,29 +124,27 @@ export default function Home() {
       const amountInOctas = Math.floor(amountToUse * 100_000_000);
       const recipientAddress = "0x0000000000000000000000000000000000000000000000000000000000000001";
 
-      const petraProvider = (window as any).aptos || (window as any).petra;
-
-      if (!petraProvider) {
-        throw new Error("Petra Wallet extension window object not found. Please refresh the page.");
-      }
-
-      // Format payload tương thích 100% với extension ví Petra
-      const transactionPayload = {
-        arguments: [recipientAddress, amountInOctas.toString()],
-        function: "0x1::aptos_account::transfer",
-        type: "entry_function_payload",
-        type_arguments: [],
+      // Cấu trúc Payload chuẩn Aptos Wallet Standard (không gây lỗi multisig)
+      const transaction: InputTransactionData = {
+        data: {
+          function: "0x1::aptos_account::transfer",
+          typeArguments: [],
+          functionArguments: [recipientAddress, amountInOctas],
+        },
       };
 
-      const response = await petraProvider.signAndSubmitTransaction(transactionPayload);
+      const response = await signAndSubmitTransaction(transaction);
 
       if (response && response.hash) {
         setTxHash(response.hash);
         setStatusMessage("Transaction Approved & Executed On Shelbynet!");
         setIsError(false);
-        setTimeout(() => fetchBalance(), 2500);
+        
+        // Đợi Block confirmation
+        await aptos.waitForTransaction({ transactionHash: response.hash });
+        fetchBalance();
       } else {
-        throw new Error("Transaction was submitted but no hash was returned.");
+        throw new Error("No transaction hash returned.");
       }
 
     } catch (error: any) {
@@ -148,9 +162,7 @@ export default function Home() {
     }
   };
 
-  const accountAddrStr = account?.address 
-    ? (typeof account.address === "string" ? account.address : (account.address as any).toString())
-    : "";
+  const accountAddrStr = account?.address ? account.address.toString() : "";
 
   return (
     <div className="flex min-h-screen flex-col justify-between p-4 md:p-10 max-w-7xl mx-auto text-white">
