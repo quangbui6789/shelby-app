@@ -13,7 +13,7 @@ const aptosConfig = new AptosConfig({ network: Network.TESTNET });
 const aptos = new Aptos(aptosConfig);
 
 export default function Home() {
-  const { connect, disconnect, connected, account, wallets, signAndSubmitTransaction } = useWallet();
+  const { connect, disconnect, connected, account, wallets } = useWallet();
   
   const [activeTab, setActiveTab] = useState<"trade" | "faucet" | "staking" | "storage">("trade");
   const [payAmount, setPayAmount] = useState("1");
@@ -40,26 +40,27 @@ export default function Home() {
     }
   }, []);
 
-  // 2. Fetch Balance chính xác qua Aptos REST API & SDK Resource
+  // 2. Fetch Balance chính xác
   const fetchBalance = useCallback(async () => {
     if (!account?.address) return;
+    const addr = typeof account.address === "string" ? account.address : (account.address as any).toString();
+
     try {
       const resource = await aptos.getAccountResource<{ coin: { value: string } }>({
-        accountAddress: account.address,
+        accountAddress: addr,
         resourceType: "0x1::coin::CoinStore<0x1::aptos_coin::AptosCoin>",
       });
 
       if (resource?.coin?.value) {
         setBalance((Number(resource.coin.value) / 100000000).toString());
       } else {
-        const amount = await aptos.getAccountAPTAmount({ accountAddress: account.address });
+        const amount = await aptos.getAccountAPTAmount({ accountAddress: addr });
         setBalance((amount / 100000000).toString());
       }
     } catch (err) {
-      console.error("SDK fetch balance failed, trying REST API fallback:", err);
       try {
         const response = await fetch(
-          `https://api.testnet.aptoslabs.com/v1/accounts/${account.address}/resource/0x1::coin::CoinStore<0x1::aptos_coin::AptosCoin>`
+          `https://api.testnet.aptoslabs.com/v1/accounts/${addr}/resource/0x1::coin::CoinStore<0x1::aptos_coin::AptosCoin>`
         );
         if (response.ok) {
           const data = await response.json();
@@ -67,7 +68,7 @@ export default function Home() {
           setBalance((Number(octas) / 100000000).toString());
         }
       } catch (fallbackErr) {
-        console.error("Fallback balance failed:", fallbackErr);
+        console.error("Balance fetch failed:", fallbackErr);
       }
     }
   }, [account]);
@@ -80,7 +81,7 @@ export default function Home() {
     }
   }, [connected, account, fetchBalance]);
 
-  // 3. Kết nối Ví
+  // 3. Kết nối / Ngắt kết nối Ví
   const handleWalletAction = async () => {
     if (connected) {
       await disconnect();
@@ -107,7 +108,7 @@ export default function Home() {
     }
   };
 
-  // 4. Thực thi Giao dịch (Tự động hỗ trợ cả Payload v1 & v2 để tránh lỗi multisig)
+  // 4. Thực thi Giao dịch (Gọi trực tiếp window.aptos để sửa triệt để lỗi 'function' in undefined)
   const handleExecuteTransaction = async (overrideAmount?: number) => {
     if (!connected || !account?.address) {
       alert("Please connect your Petra Wallet first!");
@@ -126,39 +127,27 @@ export default function Home() {
     setTxHash(null);
 
     try {
-      const amountInOctas = Math.floor(amountToUse * 100000000);
+      const amountInOctas = Math.floor(amountToUse * 100000000).toString();
       const recipientAddress = "0x0000000000000000000000000000000000000000000000000000000000000001";
 
-      let response: any;
+      const payload = {
+        type: "entry_function_payload",
+        function: "0x1::aptos_account::transfer",
+        type_arguments: [],
+        arguments: [recipientAddress, amountInOctas],
+      };
 
-      // Thử thực thi theo chuẩn v2
-      try {
-        response = await signAndSubmitTransaction({
-          sender: account.address,
-          data: {
-            function: "0x1::aptos_account::transfer",
-            typeArguments: [],
-            functionArguments: [recipientAddress, BigInt(amountInOctas)],
-          },
-        } as any);
-      } catch (v2Err: any) {
-        // Fallback thực thi theo chuẩn v1 nếu Adapter cũ yêu cầu
-        if (v2Err?.message?.includes("multisigAddress") || v2Err?.toString()?.includes("multisigAddress")) {
-          response = await signAndSubmitTransaction({
-            payload: {
-              type: "entry_function_payload",
-              function: "0x1::aptos_account::transfer",
-              type_arguments: [],
-              arguments: [recipientAddress, amountInOctas.toString()],
-            }
-          } as any);
-        } else {
-          throw v2Err;
-        }
+      let pendingTx: any;
+
+      // Ưu tiên gọi provider trực tiếp của Petra Extension
+      if (typeof window !== "undefined" && (window as any).aptos) {
+        pendingTx = await (window as any).aptos.signAndSubmitTransaction(payload);
+      } else {
+        throw new Error("Petra Wallet extension not detected in window context.");
       }
 
-      if (response && response.hash) {
-        setTxHash(response.hash);
+      if (pendingTx && pendingTx.hash) {
+        setTxHash(pendingTx.hash);
         setStatusMessage("Transaction Approved & Executed On Shelbynet!");
         setIsError(false);
         setTimeout(() => fetchBalance(), 2000);
@@ -179,6 +168,10 @@ export default function Home() {
       setIsProcessing(false);
     }
   };
+
+  const accountAddrStr = account?.address 
+    ? (typeof account.address === "string" ? account.address : (account.address as any).toString())
+    : "";
 
   return (
     <div className="flex min-h-screen flex-col justify-between p-4 md:p-10 max-w-7xl mx-auto text-white">
@@ -208,8 +201,8 @@ export default function Home() {
             className="flex items-center gap-2 rounded-xl bg-teal-500 px-5 py-2.5 font-semibold text-slate-950 transition hover:bg-teal-400"
           >
             <Wallet className="h-4 w-4" />
-            {connected && account
-              ? `${account.address.slice(0, 6)}...${account.address.slice(-4)}`
+            {connected && accountAddrStr
+              ? `${accountAddrStr.slice(0, 6)}...${accountAddrStr.slice(-4)}`
               : "Connect Petra Wallet"}
           </button>
         </div>
