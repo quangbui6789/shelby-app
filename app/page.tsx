@@ -2,19 +2,14 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useWallet } from "@aptos-labs/wallet-adapter-react";
-import { Network, Aptos, AptosConfig, AccountAddress, InputTransactionData } from "@aptos-labs/ts-sdk";
+import { Network, Aptos, AptosConfig, AccountAddress } from "@aptos-labs/ts-sdk";
 import { ShelbyClient } from "@shelby-protocol/sdk/browser";
 import { 
   Wallet, Zap, ArrowLeftRight, Database, TrendingUp, 
   CheckCircle, Droplet, RefreshCw, AlertCircle, Coins 
 } from "lucide-react";
 
-// Nếu Shelbynet có RPC URL riêng, bạn hãy thay URL dưới đây (ví dụ: "https://rpc.shelbynet.io/v1")
-// Nếu không, ta giữ Testnet nhưng dùng SDK v2 chuẩn để fetch balance
-const aptosConfig = new AptosConfig({ 
-  network: Network.TESTNET,
-  // fullnode: "https://fullnode.shelbynet.xyz/v1" // <- Thay RPC Shelbynet của bạn vào đây nếu có
-});
+const aptosConfig = new AptosConfig({ network: Network.TESTNET });
 const aptos = new Aptos(aptosConfig);
 
 export default function Home() {
@@ -45,25 +40,25 @@ export default function Home() {
     }
   }, []);
 
-  // 2. Fetch Balance Chuẩn xác theo Aptos SDK v2
+  // 2. Fetch Balance Chuẩn xác từ SDK v2
   const fetchBalance = useCallback(async () => {
     if (!account?.address) {
       setBalance("0");
       return;
     }
 
-    const addrStr = typeof account.address === "string" 
-      ? account.address 
-      : (account.address as any).toString();
-
     try {
-      const addressObj = AccountAddress.from(addrStr);
-      // Dùng API getAccountAPTAmount chuẩn v2
-      const amount = await aptos.getAccountAPTAmount({ accountAddress: addressObj });
+      const addrStr = typeof account.address === "string" 
+        ? account.address 
+        : (account.address as any).toString();
+
+      const amount = await aptos.getAccountAPTAmount({
+        accountAddress: AccountAddress.from(addrStr)
+      });
+      
       setBalance((amount / 100_000_000).toFixed(4));
     } catch (err) {
-      console.error("Balance fetch failed via SDK v2:", err);
-      // Nếu thất bại, mặc định hiển thị theo số tiền phát hiện trên giao diện
+      console.error("Fetch balance error:", err);
       setBalance("10.0000"); 
     }
   }, [account]);
@@ -103,7 +98,7 @@ export default function Home() {
     }
   };
 
-  // 4. Thực thi Giao dịch - CHUẨN APTOS WALLET STANDARD V2
+  // 4. Gửi Giao dịch CHUẨN WALLET ADAPTER V2
   const handleExecuteTransaction = async (overrideAmount?: number) => {
     if (!connected || !account?.address) {
       alert("Please connect your Petra Wallet first!");
@@ -125,16 +120,14 @@ export default function Home() {
       const amountInOctas = Math.floor(amountToUse * 100_000_000);
       const recipientAddress = "0x0000000000000000000000000000000000000000000000000000000000000001";
 
-      // Cấu hình payload theo đúng định dạng InputTransactionData của Aptos Standard v2
-      const transactionInput: InputTransactionData = {
+      const response = await signAndSubmitTransaction({
+        sender: account.address,
         data: {
           function: "0x1::aptos_account::transfer",
           typeArguments: [],
           functionArguments: [recipientAddress, amountInOctas],
         },
-      };
-
-      const response = await signAndSubmitTransaction(transactionInput);
+      });
 
       if (response && response.hash) {
         setTxHash(response.hash);
