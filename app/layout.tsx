@@ -1,10 +1,7 @@
 "use client";
 
-import "./globals.css";
 import { AptosWalletAdapterProvider } from "@aptos-labs/wallet-adapter-react";
-import { PetraWallet } from "petra-plugin-wallet-adapter";
-
-const wallets = [new PetraWallet()];
+import "./globals.css";
 
 export default function RootLayout({
   children,
@@ -13,8 +10,8 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body className="min-h-screen bg-slate-950 text-slate-100 antialiased">
-        <AptosWalletAdapterProvider plugins={wallets} autoConnect={true}>
+      <body className="bg-slate-950 text-slate-100 min-h-screen">
+        <AptosWalletAdapterProvider autoConnect={true}>
           {children}
         </AptosWalletAdapterProvider>
       </body>
