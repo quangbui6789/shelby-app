@@ -46,7 +46,7 @@ export default function Home() {
     }
   };
 
-  // THỰC THI GIAO DỊCH (SỬA DỨT ĐIỂM LỖI MULTISIGADDRESS)
+  // THỰC THI GIAO DỊCH CHUẨN APTOS WALLET STANDARD
   const handleExecuteTransaction = async (overrideAmount?: number) => {
     if (!connected || !account?.address) {
       alert("Please connect your Petra Wallet first!");
@@ -66,34 +66,20 @@ export default function Home() {
 
     try {
       const amountInOctas = Math.floor(amountToUse * 100000000);
-      const recipientAddress = "0x1"; // Địa chỉ nhận tiền mặc định trên Testnet
+      const recipientAddress = "0x1"; // Địa chỉ nhận mặc định trên Aptos Testnet
 
-      let responseHash = "";
-
-      // Ưu tiên 1: Gọi trực tiếp Petra Provider (window.aptos) để tránh hoàn toàn lỗi 'multisigAddress' của Wallet Adapter SDK
-      if (typeof window !== "undefined" && (window as any).aptos) {
-        const transaction = {
-          type: "entry_function_payload",
+      // Đưa về chuẩn InputTransactionData chính xác của Aptos SDK v2
+      const response = await signAndSubmitTransaction({
+        sender: account.address,
+        data: {
           function: "0x1::aptos_account::transfer",
-          type_arguments: [],
-          arguments: [recipientAddress, amountInOctas.toString()],
-        };
-        const pendingTransaction = await (window as any).aptos.signAndSubmitTransaction(transaction);
-        responseHash = pendingTransaction.hash;
-      } else {
-        // Dự phòng 2: Gọi qua Wallet Adapter v2 nếu truy cập qua thiết bị khác
-        const response = await signAndSubmitTransaction({
-          payload: {
-            function: "0x1::aptos_account::transfer",
-            typeArguments: [],
-            functionArguments: [recipientAddress, amountInOctas.toString()],
-          },
-        } as any);
-        responseHash = response.hash;
-      }
+          typeArguments: [],
+          functionArguments: [recipientAddress, amountInOctas],
+        },
+      });
 
-      if (responseHash) {
-        setTxHash(responseHash);
+      if (response && response.hash) {
+        setTxHash(response.hash);
         setStatusMessage("Transaction Approved & Executed On-Chain via Shelby!");
         setIsError(false);
       } else {
