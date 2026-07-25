@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { useWallet, InputTransactionData } from "@aptos-labs/wallet-adapter-react";
+import { useWallet } from "@aptos-labs/wallet-adapter-react";
 import { Network, Aptos, AptosConfig } from "@aptos-labs/ts-sdk";
 import { ShelbyClient } from "@shelby-protocol/sdk/browser";
 import { 
@@ -9,7 +9,7 @@ import {
   CheckCircle, Droplet, RefreshCw, AlertCircle, Coins 
 } from "lucide-react";
 
-// Khởi tạo Aptos SDK v2
+// Khởi tạo Aptos Client với Node chính chủ Aptos Testnet
 const aptosConfig = new AptosConfig({ network: Network.TESTNET });
 const aptos = new Aptos(aptosConfig);
 
@@ -27,7 +27,7 @@ export default function Home() {
   const [isError, setIsError] = useState(false);
   const [txHash, setTxHash] = useState<string | null>(null);
 
-  // 1. Khởi tạo Shelby Client
+  // Khởi tạo Shelby
   useEffect(() => {
     try {
       new ShelbyClient({
@@ -35,35 +35,40 @@ export default function Home() {
         apiKey: process.env.NEXT_PUBLIC_SHELBY_API_KEY || "aptoslabs_demo",
       });
     } catch (err) {
-      console.error("Shelby Client Init Error:", err);
+      console.error("Shelby Init Error:", err);
     }
   }, []);
 
-  // 2. Fetch số dư APT từ REST API
+  // 1. FETCH BALANCE SỬ DỤNG SDK CHÍNH THỨC (Tránh lỗi Fetch 0.0000)
   const fetchBalance = useCallback(async () => {
     if (!account?.address) {
       setBalance("0");
       return;
     }
 
-    const addrStr = account.address.toString();
-
     try {
-      const res = await fetch(
-        `https://fullnode.testnet.aptoslabs.com/v1/accounts/${addrStr}/resource/0x1::coin::CoinStore<0x1::aptos_coin::AptosCoin>`
-      );
-      if (res.ok) {
-        const data = await res.json();
-        const rawBalance = data?.data?.coin?.value;
-        if (rawBalance !== undefined) {
-          setBalance((Number(rawBalance) / 100_000_000).toFixed(4));
-          return;
-        }
-      }
-      setBalance("0.0000");
+      const addrStr = typeof account.address === "string" ? account.address : account.address.toString();
+      
+      // Đọc trực tiếp số dư APT bằng Aptos SDK v2
+      const amount = await aptos.getAccountAPTAmount({
+        accountAddress: addrStr,
+      });
+
+      const formatted = (amount / 100_000_000).toFixed(4);
+      setBalance(formatted);
     } catch (err) {
       console.error("Fetch balance error:", err);
-      setBalance("0.0000"); 
+      // Fallback REST API nếu SDK gặp vấn đề
+      try {
+        const addrStr = typeof account.address === "string" ? account.address : account.address.toString();
+        const res = await fetch(`https://fullnode.testnet.aptoslabs.com/v1/accounts/${addrStr}/resource/0x1::coin::CoinStore<0x1::aptos_coin::AptosCoin>`);
+        const data = await res.json();
+        if (data?.data?.coin?.value) {
+          setBalance((Number(data.data.coin.value) / 100_000_000).toFixed(4));
+        }
+      } catch (e) {
+        console.error("REST fallback failed:", e);
+      }
     }
   }, [account]);
 
@@ -75,7 +80,7 @@ export default function Home() {
     }
   }, [connected, account, fetchBalance]);
 
-  // 3. Xử lý kết nối ví
+  // 2. KẾT NỐI VÍ
   const handleWalletAction = async () => {
     if (connected) {
       await disconnect();
@@ -102,7 +107,7 @@ export default function Home() {
     }
   };
 
-  // 4. Thực thi Giao Dịch Chuẩn Aptos Wallet Standard (AIP-62)
+  // 3. THỰC THI GIAO DỊCH SWAP / TRADE (Giải quyết triệt để Multisig Schema)
   const handleExecuteTransaction = async (overrideAmount?: number) => {
     if (!connected || !account?.address) {
       alert("Please connect your Petra Wallet first!");
@@ -121,30 +126,29 @@ export default function Home() {
     setTxHash(null);
 
     try {
-      const amountInOctas = Math.floor(amountToUse * 100_000_000);
+      const amountInOctas = Math.floor(amountToUse * 100_000_000).toString();
       const recipientAddress = "0x0000000000000000000000000000000000000000000000000000000000000001";
 
-      // Cấu trúc Payload chuẩn Aptos Wallet Standard (không gây lỗi multisig)
-      const transaction: InputTransactionData = {
+      // Đưa payload về đúng Format Adapter v2 chuẩn hóa dạng String
+      const response = await signAndSubmitTransaction({
+        sender: typeof account.address === "string" ? account.address : account.address.toString(),
         data: {
           function: "0x1::aptos_account::transfer",
           typeArguments: [],
           functionArguments: [recipientAddress, amountInOctas],
         },
-      };
-
-      const response = await signAndSubmitTransaction(transaction);
+      });
 
       if (response && response.hash) {
         setTxHash(response.hash);
         setStatusMessage("Transaction Approved & Executed On Shelbynet!");
         setIsError(false);
-        
-        // Đợi Block confirmation
+
+        // Đợi xác nhận block và cập nhật lại balance
         await aptos.waitForTransaction({ transactionHash: response.hash });
         fetchBalance();
       } else {
-        throw new Error("No transaction hash returned.");
+        throw new Error("Transaction was submitted but no hash returned.");
       }
 
     } catch (error: any) {
@@ -162,7 +166,9 @@ export default function Home() {
     }
   };
 
-  const accountAddrStr = account?.address ? account.address.toString() : "";
+  const accountAddrStr = account?.address 
+    ? (typeof account.address === "string" ? account.address : account.address.toString())
+    : "";
 
   return (
     <div className="flex min-h-screen flex-col justify-between p-4 md:p-10 max-w-7xl mx-auto text-white">
