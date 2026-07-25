@@ -23,19 +23,22 @@ export default function Home() {
   const [txHash, setTxHash] = useState<string | null>(null);
   const [shelbyClient, setShelbyClient] = useState<any>(null);
 
-  // Dynamic Import Shelby Client an toàn cho Next.js
+  // Dynamic Import Shelby Client an toàn cho Next.js SSR theo tài liệu Shelby
   useEffect(() => {
     let isMounted = true;
-    
+
     if (typeof window !== "undefined") {
       import("@shelby-protocol/sdk/browser")
-        .then(({ ShelbyClient }) => {
-          if (isMounted && ShelbyClient) {
-            const client = new ShelbyClient({
-              network: Network.TESTNET,
-              apiKey: "aptoslabs_testnet",
-            });
-            setShelbyClient(client);
+        .then((shelbyModule) => {
+          if (isMounted && shelbyModule) {
+            // Khởi tạo Shelby Client nếu SDK cung cấp Class/Client
+            const ClientClass = shelbyModule.ShelbyClient || shelbyModule.Shelby;
+            if (ClientClass) {
+              const client = new ClientClass({
+                network: Network.TESTNET,
+              });
+              setShelbyClient(client);
+            }
           }
         })
         .catch((err) => {
@@ -48,7 +51,7 @@ export default function Home() {
     };
   }, []);
 
-  // KẾT NỐI VÍ PETRA
+  // KẾT NỐI VÍ (Dùng adapter tiêu chuẩn của Aptos Labs)
   const handleWalletAction = async () => {
     if (connected) {
       await disconnect();
@@ -58,13 +61,18 @@ export default function Home() {
     }
 
     try {
+      // Tìm ví Petra trong danh sách ví hỗ trợ
       const petraWallet = wallets?.find((w) => w.name.toLowerCase().includes("petra"));
+      
       if (petraWallet) {
         await connect(petraWallet.name);
         setStatusMessage("Connected via Petra Wallet!");
         setIsError(false);
+      } else if (wallets && wallets.length > 0) {
+        // Fallback kết nối ví đầu tiên nếu không tìm thấy tên 'petra'
+        await connect(wallets[0].name);
       } else {
-        alert("Petra Wallet extension not found!");
+        alert("No Aptos compatible wallet found!");
         window.open("https://petra.app/", "_blank");
       }
     } catch (error: any) {
@@ -73,7 +81,7 @@ export default function Home() {
     }
   };
 
-  // THỰC THI GIAO DỊCH
+  // THỰC THI GIAO DỊCH CHUẨN SDK MỚI (@aptos-labs/ts-sdk)
   const handleExecuteTransaction = async (overrideAmount?: number) => {
     if (!connected || !account?.address) {
       alert("Please connect your Petra Wallet first!");
@@ -96,6 +104,7 @@ export default function Home() {
       const recipientAddress = "0x1";
 
       const response = await signAndSubmitTransaction({
+        sender: account.address,
         data: {
           function: "0x1::aptos_account::transfer",
           typeArguments: [],
