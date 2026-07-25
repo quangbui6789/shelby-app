@@ -46,7 +46,7 @@ export default function Home() {
     }
   };
 
-  // THỰC THI GIAO DỊCH (SỬA DỨT ĐIỂM LỖI MULTISIGADDRESS)
+  // THỰC THI GIAO DỊCH SWAP / TESTNET ACTION
   const handleExecuteTransaction = async (overrideAmount?: number) => {
     if (!connected || !account?.address) {
       alert("Please connect your Petra Wallet first!");
@@ -67,14 +67,16 @@ export default function Home() {
     try {
       const amountInOctas = Math.floor(amountToUse * 100000000);
 
-      // Cấu trúc đối tượng giao dịch chuẩn Aptos Wallet Adapter v2
-      // Bắt buộc có sender để tránh lỗi 'multisigAddress' in undefined
+      // Địa chỉ nhận tiền demo / Vault Shelby Testnet
+      const recipientAddress = "0x1"; 
+
+      // Cấu hình payload giao dịch chuẩn Aptos Wallet Adapter v2
       const response = await signAndSubmitTransaction({
         sender: account.address,
         data: {
           function: "0x1::aptos_account::transfer",
           typeArguments: [],
-          functionArguments: [account.address, amountInOctas.toString()],
+          functionArguments: [recipientAddress, amountInOctas.toString()],
         },
       });
 
