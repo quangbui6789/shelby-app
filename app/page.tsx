@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { useWallet } from "@aptos-labs/wallet-adapter-react";
 import { Network } from "@aptos-labs/ts-sdk";
+import { ShelbyClient } from "@shelby-protocol/sdk/browser";
 import { 
   Wallet, Zap, ArrowLeftRight, Database, TrendingUp, 
   CheckCircle, Droplet, RefreshCw, AlertCircle, Coins 
@@ -21,37 +22,22 @@ export default function Home() {
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [isError, setIsError] = useState(false);
   const [txHash, setTxHash] = useState<string | null>(null);
-  const [shelbyClient, setShelbyClient] = useState<any>(null);
+  const [shelbyClient, setShelbyClient] = useState<ShelbyClient | null>(null);
 
-  // Dynamic Import Shelby Client an toàn cho Next.js SSR theo tài liệu Shelby
+  // Khởi tạo Shelby Client chuẩn Browser SDK theo tài liệu
   useEffect(() => {
-    let isMounted = true;
-
-    if (typeof window !== "undefined") {
-      import("@shelby-protocol/sdk/browser")
-        .then((shelbyModule) => {
-          if (isMounted && shelbyModule) {
-            // Khởi tạo Shelby Client nếu SDK cung cấp Class/Client
-            const ClientClass = shelbyModule.ShelbyClient || shelbyModule.Shelby;
-            if (ClientClass) {
-              const client = new ClientClass({
-                network: Network.TESTNET,
-              });
-              setShelbyClient(client);
-            }
-          }
-        })
-        .catch((err) => {
-          console.error("Failed to load Shelby SDK dynamically:", err);
-        });
+    try {
+      const client = new ShelbyClient({
+        network: Network.TESTNET,
+        apiKey: "aptoslabs_demo", // Thay thế bằng API Key của bạn nếu có
+      });
+      setShelbyClient(client);
+    } catch (err) {
+      console.error("Failed to initialize Shelby Client:", err);
     }
-
-    return () => {
-      isMounted = false;
-    };
   }, []);
 
-  // KẾT NỐI VÍ (Dùng adapter tiêu chuẩn của Aptos Labs)
+  // KẾT NỐI VÍ PETRA
   const handleWalletAction = async () => {
     if (connected) {
       await disconnect();
@@ -61,7 +47,6 @@ export default function Home() {
     }
 
     try {
-      // Tìm ví Petra trong danh sách ví hỗ trợ
       const petraWallet = wallets?.find((w) => w.name.toLowerCase().includes("petra"));
       
       if (petraWallet) {
@@ -69,7 +54,6 @@ export default function Home() {
         setStatusMessage("Connected via Petra Wallet!");
         setIsError(false);
       } else if (wallets && wallets.length > 0) {
-        // Fallback kết nối ví đầu tiên nếu không tìm thấy tên 'petra'
         await connect(wallets[0].name);
       } else {
         alert("No Aptos compatible wallet found!");
@@ -81,7 +65,7 @@ export default function Home() {
     }
   };
 
-  // THỰC THI GIAO DỊCH CHUẨN SDK MỚI (@aptos-labs/ts-sdk)
+  // GIẢ LẬP GIAO DỊCH
   const handleExecuteTransaction = async (overrideAmount?: number) => {
     if (!connected || !account?.address) {
       alert("Please connect your Petra Wallet first!");
@@ -123,7 +107,6 @@ export default function Home() {
     } catch (error: any) {
       console.error("Transaction Error:", error);
       setIsError(true);
-      
       const errMessage = error?.message || error?.toString() || "";
       if (errMessage.includes("rejected") || error?.code === 4001) {
         setStatusMessage("Transaction Cancelled: You rejected the request in Petra Wallet.");
@@ -192,7 +175,7 @@ export default function Home() {
         </div>
       )}
 
-      {/* MAIN TABS */}
+      {/* MAIN CONTENT */}
       <main className="my-8 flex flex-col items-center">
         <div className="flex flex-wrap justify-center bg-slate-900 border border-slate-800 p-1.5 rounded-2xl mb-8 gap-1">
           <button
@@ -210,7 +193,7 @@ export default function Home() {
               activeTab === "faucet" ? "bg-teal-500 text-slate-950 font-bold" : "text-slate-400 hover:text-white"
             }`}
           >
-            <Droplet className="h-4 w-4" /> Faucet (Get APT)
+            <Droplet className="h-4 w-4" /> Faucet
           </button>
 
           <button
@@ -219,7 +202,7 @@ export default function Home() {
               activeTab === "staking" ? "bg-teal-500 text-slate-950 font-bold" : "text-slate-400 hover:text-white"
             }`}
           >
-            <TrendingUp className="h-4 w-4" /> Staking & Yield
+            <TrendingUp className="h-4 w-4" /> Staking
           </button>
           
           <button
