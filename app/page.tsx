@@ -40,7 +40,7 @@ export default function Home() {
     }
   }, []);
 
-  // 2. Fetch Balance
+  // 2. Fetch Balance chính xác
   const fetchBalance = useCallback(async () => {
     if (!account?.address) return;
     const addr = typeof account.address === "string" ? account.address : (account.address as any).toString();
@@ -130,10 +130,16 @@ export default function Home() {
       const amountInOctas = Math.floor(amountToUse * 100000000);
       const recipientAddress = "0x0000000000000000000000000000000000000000000000000000000000000001";
 
-      // Sử dụng đúng định dạng InputTransactionData của Aptos Standard
+      const accountAddressStr = typeof account.address === "string" 
+        ? account.address 
+        : (account.address as any).toString();
+
+      // Sử dụng định dạng chuẩn Aptos v2 có truyền sender
       const response = await signAndSubmitTransaction({
+        sender: accountAddressStr,
         data: {
           function: "0x1::aptos_account::transfer",
+          typeArguments: [],
           functionArguments: [recipientAddress, amountInOctas],
         },
       });
