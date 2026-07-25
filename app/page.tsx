@@ -3,7 +3,6 @@
 import { useState, useEffect } from "react";
 import { useWallet } from "@aptos-labs/wallet-adapter-react";
 import { Network } from "@aptos-labs/ts-sdk";
-import { ShelbyClient } from "@shelby-protocol/sdk/browser";
 import { 
   Wallet, Zap, ArrowLeftRight, Database, TrendingUp, 
   CheckCircle, Droplet, RefreshCw, AlertCircle, Coins 
@@ -22,19 +21,21 @@ export default function Home() {
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [isError, setIsError] = useState(false);
   const [txHash, setTxHash] = useState<string | null>(null);
-  const [shelbyClient, setShelbyClient] = useState<ShelbyClient | null>(null);
+  const [shelbyClient, setShelbyClient] = useState<any>(null);
 
-  // Khởi tạo Shelby Browser Client theo Doc
+  // Dynamic Import Shelby Client để tránh lỗi SSR khi Vercel Build
   useEffect(() => {
-    try {
-      const client = new ShelbyClient({
-        network: Network.TESTNET,
-        apiKey: "aptoslabs_testnet",
+    import("@shelby-protocol/sdk/browser")
+      .then(({ ShelbyClient }) => {
+        const client = new ShelbyClient({
+          network: Network.TESTNET,
+          apiKey: "aptoslabs_testnet",
+        });
+        setShelbyClient(client);
+      })
+      .catch((err) => {
+        console.error("Failed to load Shelby SDK dynamically:", err);
       });
-      setShelbyClient(client);
-    } catch (e) {
-      console.error("Shelby Client Init Error:", e);
-    }
   }, []);
 
   // KẾT NỐI VÍ PETRA
@@ -62,7 +63,7 @@ export default function Home() {
     }
   };
 
-  // THỰC THI GIAO DỊCH CHUẨN WALLET ADAPTER V2
+  // THỰC THI GIAO DỊCH
   const handleExecuteTransaction = async (overrideAmount?: number) => {
     if (!connected || !account?.address) {
       alert("Please connect your Petra Wallet first!");
