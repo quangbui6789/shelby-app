@@ -40,13 +40,13 @@ export default function Home() {
     }
   }, []);
 
-  // 2. Fetch Balance
+  // 2. Fetch Balance chính xác
   const fetchBalance = useCallback(async () => {
     if (!account?.address) {
       setBalance("0");
       return;
     }
-
+    
     const addr = typeof account.address === "string" 
       ? account.address 
       : (account.address as any).toString();
@@ -96,7 +96,7 @@ export default function Home() {
     }
   };
 
-  // 4. Thực thi Giao dịch - ĐÃ SỬA PAYLOAD
+  // 4. Thực thi Giao dịch - ĐÃ SỬA PAYLOAD ĐỂ TRÁNH MULTISIG ERROR
   const handleExecuteTransaction = async (overrideAmount?: number) => {
     if (!connected || !account?.address) {
       alert("Please connect your Petra Wallet first!");
@@ -118,6 +118,7 @@ export default function Home() {
       const amountInOctas = Math.floor(amountToUse * 100000000);
       const recipientAddress = "0x0000000000000000000000000000000000000000000000000000000000000001";
 
+      // Payload đúng format
       const transactionPayload = {
         sender: account.address,
         data: {
