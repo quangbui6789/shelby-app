@@ -1,4 +1,4 @@
-/** @type {import('next').NextPage} */
+/** @type {import('next').NextConfig} */
 const nextConfig = {
   webpack: (config, { isServer }) => {
     if (!isServer) {
@@ -7,6 +7,10 @@ const nextConfig = {
         fs: false,
         net: false,
         tls: false,
+        child_process: false,
+      };
+      config.resolve.alias = {
+        ...config.resolve.alias,
         got: false,
       };
     }
