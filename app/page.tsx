@@ -2,19 +2,15 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useWallet } from "@aptos-labs/wallet-adapter-react";
-import { Network, Aptos, AptosConfig } from "@aptos-labs/ts-sdk";
+import { Network } from "@aptos-labs/ts-sdk";
 import { ShelbyClient } from "@shelby-protocol/sdk/browser";
 import { 
   Wallet, Zap, ArrowLeftRight, Database, TrendingUp, 
   CheckCircle, Droplet, RefreshCw, AlertCircle, Coins 
 } from "lucide-react";
 
-// Khởi tạo Aptos SDK Client để đọc dữ liệu On-chain
-const aptosConfig = new AptosConfig({ network: Network.TESTNET });
-const aptos = new Aptos(aptosConfig);
-
 export default function Home() {
-  const { connect, disconnect, connected, account, wallets, signAndSubmitTransaction } = useWallet();
+  const { connect, disconnect, connected, account, wallets } = useWallet();
   
   const [activeTab, setActiveTab] = useState<"trade" | "faucet" | "staking" | "storage">("trade");
   const [payAmount, setPayAmount] = useState("1");
@@ -41,18 +37,26 @@ export default function Home() {
     }
   }, []);
 
-  // 2. Lấy số dư APT thực tế từ ví Petra khi kết nối
+  // 2. Lấy số dư APT thực tế trực tiếp từ ví Petra (Shelbynet Node)
   const fetchBalance = useCallback(async () => {
     if (!account?.address) return;
     try {
-      const resources = await aptos.getAccountAPTAmount({
-        accountAddress: account.address,
-      });
-      // Đổi từ Octas (10^-8) sang APT
-      setBalance((resources / 100000000).toLocaleString("en-US", { maximumFractionDigits: 4 }));
+      const wallet = (window as any).aptos;
+      if (wallet && typeof wallet.getBalance === "function") {
+        const bal = await wallet.getBalance();
+        setBalance((bal / 100000000).toString());
+      } else if (wallet && typeof wallet.getAccountResources === "function") {
+        const resources = await wallet.getAccountResources(account.address);
+        const accountResource = resources.find(
+          (r: any) => r.type === "0x1::coin::CoinStore<0x1::aptos_coin::AptosCoin>"
+        );
+        if (accountResource) {
+          const value = accountResource.data.coin.value;
+          setBalance((Number(value) / 100000000).toString());
+        }
+      }
     } catch (err) {
       console.error("Error fetching balance:", err);
-      setBalance("0");
     }
   }, [account]);
 
@@ -64,7 +68,7 @@ export default function Home() {
     }
   }, [connected, account, fetchBalance]);
 
-  // 3. Xử lý kết nối / ngắt kết nối ví Petra
+  // 3. Kết nối / Ngắt kết nối ví
   const handleWalletAction = async () => {
     if (connected) {
       await disconnect();
@@ -92,7 +96,7 @@ export default function Home() {
     }
   };
 
-  // 4. Xử lý gửi Giao dịch chuẩn Aptos SDK v2
+  // 4. Ký và gửi giao dịch qua Window Provider (Khắc phục dứt điểm lỗi Multisig)
   const handleExecuteTransaction = async (overrideAmount?: number) => {
     if (!connected || !account?.address) {
       alert("Please connect your Petra Wallet first!");
@@ -114,23 +118,26 @@ export default function Home() {
       const amountInOctas = Math.floor(amountToUse * 100000000);
       const recipientAddress = "0x0000000000000000000000000000000000000000000000000000000000000001";
 
-      // Cấu trúc payload chuẩn v2 truyền vào `sender` và `data`
-      const response = await signAndSubmitTransaction({
-        sender: account.address,
-        data: {
-          function: "0x1::aptos_account::transfer",
-          typeArguments: [],
-          functionArguments: [recipientAddress, amountInOctas],
-        },
-      });
+      const wallet = (window as any).aptos;
+      if (!wallet) {
+        throw new Error("Petra Wallet extension not found!");
+      }
+
+      // Format payload legacy chuẩn Petra Extension
+      const payload = {
+        type: "entry_function_payload",
+        function: "0x1::aptos_account::transfer",
+        type_arguments: [],
+        arguments: [recipientAddress, amountInOctas.toString()],
+      };
+
+      const response = await wallet.signAndSubmitTransaction(payload);
 
       if (response && response.hash) {
         setTxHash(response.hash);
         setStatusMessage("Transaction Approved & Executed On Shelbynet!");
         setIsError(false);
-        
-        // Cập nhật lại số dư sau khi giao dịch thành công
-        setTimeout(() => fetchBalance(), 3000);
+        setTimeout(() => fetchBalance(), 2000);
       } else {
         throw new Error("No transaction hash returned.");
       }
@@ -150,7 +157,7 @@ export default function Home() {
   };
 
   return (
-    <div className="flex min-h-screen flex-col justify-between p-4 md:p-10 max-w-7xl mx-auto">
+    <div className="flex min-h-screen flex-col justify-between p-4 md:p-10 max-w-7xl mx-auto text-white">
       {/* HEADER */}
       <header className="flex items-center justify-between border-b border-slate-800 pb-6">
         <div className="flex items-center gap-3">
@@ -200,14 +207,7 @@ export default function Home() {
           {txHash && (
             <div className="mt-2 pt-2 border-t border-slate-800 flex items-center gap-2 text-xs font-mono text-slate-400">
               <span>Tx Hash:</span>
-              <a 
-                href={`https://explorer.aptoslabs.com/txn/${txHash}?network=testnet`} 
-                target="_blank" 
-                rel="noreferrer"
-                className="text-teal-400 hover:underline truncate max-w-xs"
-              >
-                {txHash}
-              </a>
+              <span className="text-teal-400 truncate max-w-xs">{txHash}</span>
             </div>
           )}
         </div>
