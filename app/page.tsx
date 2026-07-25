@@ -27,7 +27,6 @@ export default function Home() {
   const [txHash, setTxHash] = useState<string | null>(null);
   const [, setShelbyClient] = useState<ShelbyClient | null>(null);
 
-  // 1. Khởi tạo Shelby Browser SDK
   useEffect(() => {
     try {
       const client = new ShelbyClient({
@@ -40,7 +39,6 @@ export default function Home() {
     }
   }, []);
 
-  // 2. Fetch Balance Chuẩn xác từ SDK v2
   const fetchBalance = useCallback(async () => {
     if (!account?.address) {
       setBalance("0");
@@ -71,7 +69,6 @@ export default function Home() {
     }
   }, [connected, account, fetchBalance]);
 
-  // 3. Kết nối / Ngắt kết nối Ví
   const handleWalletAction = async () => {
     if (connected) {
       await disconnect();
@@ -98,7 +95,6 @@ export default function Home() {
     }
   };
 
-  // 4. Gửi Giao dịch CHUẨN WALLET ADAPTER V2
   const handleExecuteTransaction = async (overrideAmount?: number) => {
     if (!connected || !account?.address) {
       alert("Please connect your Petra Wallet first!");
@@ -120,17 +116,18 @@ export default function Home() {
       const amountInOctas = Math.floor(amountToUse * 100_000_000);
       const recipientAddress = "0x0000000000000000000000000000000000000000000000000000000000000001";
 
-      const response = await signAndSubmitTransaction({
-        sender: account.address,
-        data: {
-          function: "0x1::aptos_account::transfer",
-          typeArguments: [],
-          functionArguments: [recipientAddress, amountInOctas],
-        },
-      });
+      const payload = {
+        type: "entry_function_payload",
+        function: "0x1::aptos_account::transfer",
+        type_arguments: [],
+        arguments: [recipientAddress, amountInOctas],
+      };
 
-      if (response && response.hash) {
-        setTxHash(response.hash);
+      const response = await signAndSubmitTransaction(payload as any);
+
+      if (response && (response.hash || (response as any).hash)) {
+        const hash = response.hash || (response as any).hash;
+        setTxHash(hash);
         setStatusMessage("Transaction Approved & Executed On Shelbynet!");
         setIsError(false);
         setTimeout(() => fetchBalance(), 2000);
@@ -159,7 +156,6 @@ export default function Home() {
 
   return (
     <div className="flex min-h-screen flex-col justify-between p-4 md:p-10 max-w-7xl mx-auto text-white">
-      {/* HEADER */}
       <header className="flex items-center justify-between border-b border-slate-800 pb-6">
         <div className="flex items-center gap-3">
           <div className="bg-teal-500 p-2 rounded-xl text-slate-950">
@@ -192,7 +188,6 @@ export default function Home() {
         </div>
       </header>
 
-      {/* NOTIFICATION BOX */}
       {statusMessage && (
         <div className={`mt-4 p-4 rounded-xl border text-sm ${
           isError ? "bg-rose-950/40 border-rose-500/40 text-rose-300" : "bg-slate-900 border-teal-500/30 text-teal-300"
@@ -214,7 +209,6 @@ export default function Home() {
         </div>
       )}
 
-      {/* MAIN CONTENT */}
       <main className="my-8 flex flex-col items-center">
         <div className="flex flex-wrap justify-center bg-slate-900 border border-slate-800 p-1.5 rounded-2xl mb-8 gap-1">
           <button
@@ -254,7 +248,6 @@ export default function Home() {
           </button>
         </div>
 
-        {/* SWAP TAB */}
         {activeTab === "trade" && (
           <div className="w-full max-w-md p-6 rounded-3xl bg-slate-900 border border-slate-800 shadow-2xl">
             <div className="flex justify-between items-center mb-4">
@@ -311,7 +304,6 @@ export default function Home() {
           </div>
         )}
 
-        {/* FAUCET TAB */}
         {activeTab === "faucet" && (
           <div className="w-full max-w-md p-6 rounded-3xl bg-slate-900 border border-slate-800 text-center shadow-2xl">
             <Droplet className="h-12 w-12 text-teal-400 mx-auto mb-3" />
@@ -345,7 +337,6 @@ export default function Home() {
           </div>
         )}
 
-        {/* STAKING TAB */}
         {activeTab === "staking" && (
           <div className="w-full max-w-2xl grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="p-6 rounded-3xl bg-slate-900 border border-slate-800">
@@ -376,7 +367,6 @@ export default function Home() {
           </div>
         )}
 
-        {/* STORAGE TAB */}
         {activeTab === "storage" && (
           <div className="w-full max-w-md p-6 rounded-3xl bg-slate-900 border border-slate-800 text-center">
             <Database className="h-12 w-12 text-teal-400 mx-auto mb-4" />
@@ -398,7 +388,6 @@ export default function Home() {
         )}
       </main>
 
-      {/* FOOTER */}
       <footer className="border-t border-slate-800 pt-6 flex justify-between items-center text-xs text-slate-500">
         <p>© 2026 Shelby Protocol. All rights reserved.</p>
       </footer>
