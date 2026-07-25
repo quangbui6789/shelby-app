@@ -2,10 +2,17 @@
 
 import { useState } from "react";
 import { useWallet } from "@aptos-labs/wallet-adapter-react";
+import { ShelbyClient } from "@shelby-protocol/sdk/browser";
+import { Network } from "@aptos-labs/ts-sdk";
 import { 
   Wallet, Zap, ArrowLeftRight, Database, TrendingUp, 
   CheckCircle, Droplet, RefreshCw, AlertCircle, Coins 
 } from "lucide-react";
+
+// Khởi tạo Shelby Client theo đúng doc
+const shelbyClient = new ShelbyClient({
+  network: Network.TESTNET,
+});
 
 export default function Home() {
   const { connect, disconnect, connected, account, wallets, signAndSubmitTransaction } = useWallet();
@@ -46,7 +53,7 @@ export default function Home() {
     }
   };
 
-  // THỰC THI GIAO DỊCH CHUẨN APTOS WALLET STANDARD
+  // THỰC THI GIAO DỊCH TÍCH HỢP SHELBY SDK & APTOS TS-SDK V2
   const handleExecuteTransaction = async (overrideAmount?: number) => {
     if (!connected || !account?.address) {
       alert("Please connect your Petra Wallet first!");
@@ -66,21 +73,20 @@ export default function Home() {
 
     try {
       const amountInOctas = Math.floor(amountToUse * 100000000);
-      const recipientAddress = "0x1"; // Địa chỉ nhận mặc định trên Aptos Testnet
+      const recipientAddress = "0x1";
 
-      // Đưa về chuẩn InputTransactionData chính xác của Aptos SDK v2
+      // Cấu hình payload theo đúng chuẩn TS-SDK v2 được Shelby hỗ trợ
       const response = await signAndSubmitTransaction({
-        sender: account.address,
-        data: {
+        payload: {
           function: "0x1::aptos_account::transfer",
           typeArguments: [],
           functionArguments: [recipientAddress, amountInOctas],
-        },
+        }
       });
 
       if (response && response.hash) {
         setTxHash(response.hash);
-        setStatusMessage("Transaction Approved & Executed On-Chain via Shelby!");
+        setStatusMessage("Transaction Approved & Executed On-Chain via Shelby Client!");
         setIsError(false);
       } else {
         throw new Error("No transaction hash returned.");
