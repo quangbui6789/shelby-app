@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useWallet } from "@aptos-labs/wallet-adapter-react";
-import { Network, Aptos, AptosConfig } from "@aptos-labs/ts-sdk";
+import { Network, Aptos, AptosConfig, AccountAddress } from "@aptos-labs/ts-sdk";
 import { ShelbyClient } from "@shelby-protocol/sdk/browser";
 import { 
   Wallet, Zap, ArrowLeftRight, Database, TrendingUp, 
@@ -31,7 +31,7 @@ export default function Home() {
   useEffect(() => {
     try {
       const client = new ShelbyClient({
-        network: "shelbynet",           // Sửa thành shelbynet
+        network: "shelbynet",
         apiKey: process.env.NEXT_PUBLIC_SHELBY_API_KEY || "aptoslabs_demo",
       });
       setShelbyClient(client);
@@ -40,16 +40,20 @@ export default function Home() {
     }
   }, []);
 
-  // 2. Fetch Balance chính xác
+  // 2. Fetch Balance
   const fetchBalance = useCallback(async () => {
-    if (!account?.address) return;
-    
+    if (!account?.address) {
+      setBalance("0");
+      return;
+    }
+
     const addr = typeof account.address === "string" 
       ? account.address 
       : (account.address as any).toString();
 
     try {
-      const amount = await aptos.getAccountAPTAmount({ accountAddress: addr });
+      const addressObj = AccountAddress.from(addr);
+      const amount = await aptos.getAccountAPTAmount({ accountAddress: addressObj });
       setBalance((amount / 100000000).toFixed(4));
     } catch (err) {
       console.error("Balance fetch failed:", err);
@@ -92,7 +96,7 @@ export default function Home() {
     }
   };
 
-  // 4. Thực thi Giao dịch - ĐÃ SỬA PAYLOAD ĐỂ TRÁNH MULTISIG ERROR
+  // 4. Thực thi Giao dịch (Fix multisig error)
   const handleExecuteTransaction = async (overrideAmount?: number) => {
     if (!connected || !account?.address) {
       alert("Please connect your Petra Wallet first!");
@@ -114,7 +118,6 @@ export default function Home() {
       const amountInOctas = Math.floor(amountToUse * 100000000);
       const recipientAddress = "0x0000000000000000000000000000000000000000000000000000000000000001";
 
-      // Payload đúng format - Đây là phần sửa chính
       const transactionPayload = {
         sender: account.address,
         data: {
@@ -134,7 +137,6 @@ export default function Home() {
       } else {
         throw new Error("No transaction hash returned.");
       }
-
     } catch (error: any) {
       console.error("Transaction Error:", error);
       setIsError(true);
@@ -308,7 +310,7 @@ export default function Home() {
           </div>
         )}
 
-        {/* Các tab còn lại giữ nguyên như code cũ của bạn */}
+        {/* FAUCET TAB */}
         {activeTab === "faucet" && (
           <div className="w-full max-w-md p-6 rounded-3xl bg-slate-900 border border-slate-800 text-center shadow-2xl">
             <Droplet className="h-12 w-12 text-teal-400 mx-auto mb-3" />
@@ -342,6 +344,7 @@ export default function Home() {
           </div>
         )}
 
+        {/* STAKING TAB */}
         {activeTab === "staking" && (
           <div className="w-full max-w-2xl grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="p-6 rounded-3xl bg-slate-900 border border-slate-800">
@@ -372,6 +375,7 @@ export default function Home() {
           </div>
         )}
 
+        {/* STORAGE TAB */}
         {activeTab === "storage" && (
           <div className="w-full max-w-md p-6 rounded-3xl bg-slate-900 border border-slate-800 text-center">
             <Database className="h-12 w-12 text-teal-400 mx-auto mb-4" />
