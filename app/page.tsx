@@ -108,7 +108,7 @@ export default function Home() {
     }
   };
 
-  // 4. Thực thi Giao dịch chuẩn Aptos Wallet Standard (SDK v2)
+  // 4. Thực thi Giao dịch
   const handleExecuteTransaction = async (overrideAmount?: number) => {
     if (!connected || !account?.address) {
       alert("Please connect your Petra Wallet first!");
@@ -130,18 +130,13 @@ export default function Home() {
       const amountInOctas = Math.floor(amountToUse * 100000000);
       const recipientAddress = "0x0000000000000000000000000000000000000000000000000000000000000001";
 
-      const accountAddressStr = typeof account.address === "string" 
-        ? account.address 
-        : (account.address as any).toString();
-
-      // Sử dụng định dạng chuẩn Aptos v2 có truyền sender
       const response = await signAndSubmitTransaction({
-        sender: accountAddressStr,
         data: {
           function: "0x1::aptos_account::transfer",
           typeArguments: [],
           functionArguments: [recipientAddress, amountInOctas],
         },
+        options: {},
       });
 
       if (response && response.hash) {
@@ -395,7 +390,7 @@ export default function Home() {
           <div className="w-full max-w-md p-6 rounded-3xl bg-slate-900 border border-slate-800 text-center">
             <Database className="h-12 w-12 text-teal-400 mx-auto mb-4" />
             <h2 className="text-xl font-bold text-white mb-2">Shelby Storage Vault</h2>
-            <p className="text-sm text-slate-400 mb-4">Store data permanently on Shelbynet.</p>
+            <p className="text-sm text-slate-400 mb-2">Store data permanently on Shelbynet.</p>
             
             <div className="border-2 border-dashed border-slate-700 rounded-2xl p-8 mb-4 hover:border-teal-500 transition cursor-pointer">
               <p className="text-xs text-slate-400">Click to upload blob payload onto Shelby Network</p>
