@@ -1,13 +1,17 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useWallet } from "@aptos-labs/wallet-adapter-react";
-import { Network } from "@aptos-labs/ts-sdk";
+import { Network, Aptos, AptosConfig } from "@aptos-labs/ts-sdk";
 import { ShelbyClient } from "@shelby-protocol/sdk/browser";
 import { 
   Wallet, Zap, ArrowLeftRight, Database, TrendingUp, 
   CheckCircle, Droplet, RefreshCw, AlertCircle, Coins 
 } from "lucide-react";
+
+// Khởi tạo Aptos SDK Client để đọc dữ liệu On-chain
+const aptosConfig = new AptosConfig({ network: Network.TESTNET });
+const aptos = new Aptos(aptosConfig);
 
 export default function Home() {
   const { connect, disconnect, connected, account, wallets, signAndSubmitTransaction } = useWallet();
@@ -17,19 +21,19 @@ export default function Home() {
   const [receiveAmount, setReceiveAmount] = useState("1.50");
   const [faucetAmount, setFaucetAmount] = useState("10");
   
-  const [balance] = useState<string>("10");
+  const [balance, setBalance] = useState<string>("0");
   const [isProcessing, setIsProcessing] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [isError, setIsError] = useState(false);
   const [txHash, setTxHash] = useState<string | null>(null);
   const [shelbyClient, setShelbyClient] = useState<ShelbyClient | null>(null);
 
-  // Khởi tạo Shelby Client chuẩn Browser SDK theo tài liệu
+  // 1. Khởi tạo Shelby Client
   useEffect(() => {
     try {
       const client = new ShelbyClient({
         network: Network.TESTNET,
-        apiKey: "aptoslabs_demo", // Thay thế bằng API Key của bạn nếu có
+        apiKey: "aptoslabs_demo",
       });
       setShelbyClient(client);
     } catch (err) {
@@ -37,7 +41,30 @@ export default function Home() {
     }
   }, []);
 
-  // KẾT NỐI VÍ PETRA
+  // 2. Lấy số dư APT thực tế từ ví Petra khi kết nối
+  const fetchBalance = useCallback(async () => {
+    if (!account?.address) return;
+    try {
+      const resources = await aptos.getAccountAPTAmount({
+        accountAddress: account.address,
+      });
+      // Đổi từ Octas (10^-8) sang APT
+      setBalance((resources / 100000000).toLocaleString("en-US", { maximumFractionDigits: 4 }));
+    } catch (err) {
+      console.error("Error fetching balance:", err);
+      setBalance("0");
+    }
+  }, [account]);
+
+  useEffect(() => {
+    if (connected && account) {
+      fetchBalance();
+    } else {
+      setBalance("0");
+    }
+  }, [connected, account, fetchBalance]);
+
+  // 3. Xử lý kết nối / ngắt kết nối ví Petra
   const handleWalletAction = async () => {
     if (connected) {
       await disconnect();
@@ -65,7 +92,7 @@ export default function Home() {
     }
   };
 
-  // GIẢ LẬP GIAO DỊCH
+  // 4. Xử lý gửi Giao dịch chuẩn Aptos SDK v2
   const handleExecuteTransaction = async (overrideAmount?: number) => {
     if (!connected || !account?.address) {
       alert("Please connect your Petra Wallet first!");
@@ -85,8 +112,9 @@ export default function Home() {
 
     try {
       const amountInOctas = Math.floor(amountToUse * 100000000);
-      const recipientAddress = "0x1";
+      const recipientAddress = "0x0000000000000000000000000000000000000000000000000000000000000001";
 
+      // Cấu trúc payload chuẩn v2 truyền vào `sender` và `data`
       const response = await signAndSubmitTransaction({
         sender: account.address,
         data: {
@@ -100,6 +128,9 @@ export default function Home() {
         setTxHash(response.hash);
         setStatusMessage("Transaction Approved & Executed On Shelbynet!");
         setIsError(false);
+        
+        // Cập nhật lại số dư sau khi giao dịch thành công
+        setTimeout(() => fetchBalance(), 3000);
       } else {
         throw new Error("No transaction hash returned.");
       }
@@ -169,7 +200,14 @@ export default function Home() {
           {txHash && (
             <div className="mt-2 pt-2 border-t border-slate-800 flex items-center gap-2 text-xs font-mono text-slate-400">
               <span>Tx Hash:</span>
-              <span className="text-teal-400 truncate max-w-xs">{txHash}</span>
+              <a 
+                href={`https://explorer.aptoslabs.com/txn/${txHash}?network=testnet`} 
+                target="_blank" 
+                rel="noreferrer"
+                className="text-teal-400 hover:underline truncate max-w-xs"
+              >
+                {txHash}
+              </a>
             </div>
           )}
         </div>
