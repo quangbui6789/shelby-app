@@ -96,7 +96,7 @@ export default function Home() {
     }
   };
 
-  // 4. Thực thi Giao dịch (Fix multisig error)
+  // 4. Thực thi Giao dịch - ĐÃ SỬA PAYLOAD
   const handleExecuteTransaction = async (overrideAmount?: number) => {
     if (!connected || !account?.address) {
       alert("Please connect your Petra Wallet first!");
@@ -137,6 +137,7 @@ export default function Home() {
       } else {
         throw new Error("No transaction hash returned.");
       }
+
     } catch (error: any) {
       console.error("Transaction Error:", error);
       setIsError(true);
@@ -404,4 +405,3 @@ export default function Home() {
     </div>
   );
 }
-
