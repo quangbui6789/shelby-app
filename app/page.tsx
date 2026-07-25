@@ -23,19 +23,29 @@ export default function Home() {
   const [txHash, setTxHash] = useState<string | null>(null);
   const [shelbyClient, setShelbyClient] = useState<any>(null);
 
-  // Dynamic Import Shelby Client để tránh lỗi SSR khi Vercel Build
+  // Dynamic Import Shelby Client an toàn cho Next.js
   useEffect(() => {
-    import("@shelby-protocol/sdk/browser")
-      .then(({ ShelbyClient }) => {
-        const client = new ShelbyClient({
-          network: Network.TESTNET,
-          apiKey: "aptoslabs_testnet",
+    let isMounted = true;
+    
+    if (typeof window !== "undefined") {
+      import("@shelby-protocol/sdk/browser")
+        .then(({ ShelbyClient }) => {
+          if (isMounted && ShelbyClient) {
+            const client = new ShelbyClient({
+              network: Network.TESTNET,
+              apiKey: "aptoslabs_testnet",
+            });
+            setShelbyClient(client);
+          }
+        })
+        .catch((err) => {
+          console.error("Failed to load Shelby SDK dynamically:", err);
         });
-        setShelbyClient(client);
-      })
-      .catch((err) => {
-        console.error("Failed to load Shelby SDK dynamically:", err);
-      });
+    }
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   // KẾT NỐI VÍ PETRA
@@ -48,7 +58,7 @@ export default function Home() {
     }
 
     try {
-      const petraWallet = wallets.find((w) => w.name.toLowerCase().includes("petra"));
+      const petraWallet = wallets?.find((w) => w.name.toLowerCase().includes("petra"));
       if (petraWallet) {
         await connect(petraWallet.name);
         setStatusMessage("Connected via Petra Wallet!");
