@@ -31,7 +31,7 @@ export default function Home() {
   useEffect(() => {
     try {
       const client = new ShelbyClient({
-        network: Network.TESTNET,
+        network: "shelbynet",           // Sửa thành shelbynet
         apiKey: process.env.NEXT_PUBLIC_SHELBY_API_KEY || "aptoslabs_demo",
       });
       setShelbyClient(client);
@@ -43,33 +43,17 @@ export default function Home() {
   // 2. Fetch Balance chính xác
   const fetchBalance = useCallback(async () => {
     if (!account?.address) return;
-    const addr = typeof account.address === "string" ? account.address : (account.address as any).toString();
+    
+    const addr = typeof account.address === "string" 
+      ? account.address 
+      : (account.address as any).toString();
 
     try {
-      const resource = await aptos.getAccountResource<{ coin: { value: string } }>({
-        accountAddress: addr,
-        resourceType: "0x1::coin::CoinStore<0x1::aptos_coin::AptosCoin>",
-      });
-
-      if (resource?.coin?.value) {
-        setBalance((Number(resource.coin.value) / 100000000).toString());
-      } else {
-        const amount = await aptos.getAccountAPTAmount({ accountAddress: addr });
-        setBalance((amount / 100000000).toString());
-      }
+      const amount = await aptos.getAccountAPTAmount({ accountAddress: addr });
+      setBalance((amount / 100000000).toFixed(4));
     } catch (err) {
-      try {
-        const response = await fetch(
-          `https://api.testnet.aptoslabs.com/v1/accounts/${addr}/resource/0x1::coin::CoinStore<0x1::aptos_coin::AptosCoin>`
-        );
-        if (response.ok) {
-          const data = await response.json();
-          const octas = data?.data?.coin?.value || "0";
-          setBalance((Number(octas) / 100000000).toString());
-        }
-      } catch (fallbackErr) {
-        console.error("Balance fetch failed:", fallbackErr);
-      }
+      console.error("Balance fetch failed:", err);
+      setBalance("0");
     }
   }, [account]);
 
@@ -108,7 +92,7 @@ export default function Home() {
     }
   };
 
-  // 4. Thực thi Giao dịch
+  // 4. Thực thi Giao dịch - ĐÃ SỬA PAYLOAD ĐỂ TRÁNH MULTISIG ERROR
   const handleExecuteTransaction = async (overrideAmount?: number) => {
     if (!connected || !account?.address) {
       alert("Please connect your Petra Wallet first!");
@@ -130,14 +114,17 @@ export default function Home() {
       const amountInOctas = Math.floor(amountToUse * 100000000);
       const recipientAddress = "0x0000000000000000000000000000000000000000000000000000000000000001";
 
-      const response = await signAndSubmitTransaction({
+      // Payload đúng format - Đây là phần sửa chính
+      const transactionPayload = {
+        sender: account.address,
         data: {
           function: "0x1::aptos_account::transfer",
           typeArguments: [],
-          functionArguments: [recipientAddress, amountInOctas],
+          functionArguments: [recipientAddress, amountInOctas.toString()],
         },
-        options: {},
-      });
+      };
+
+      const response = await signAndSubmitTransaction(transactionPayload);
 
       if (response && response.hash) {
         setTxHash(response.hash);
@@ -152,6 +139,7 @@ export default function Home() {
       console.error("Transaction Error:", error);
       setIsError(true);
       const errMessage = error?.message || error?.toString() || "";
+      
       if (errMessage.includes("rejected") || error?.code === 4001) {
         setStatusMessage("Transaction Cancelled: You rejected the request in Petra Wallet.");
       } else {
@@ -320,7 +308,7 @@ export default function Home() {
           </div>
         )}
 
-        {/* FAUCET TAB */}
+        {/* Các tab còn lại giữ nguyên như code cũ của bạn */}
         {activeTab === "faucet" && (
           <div className="w-full max-w-md p-6 rounded-3xl bg-slate-900 border border-slate-800 text-center shadow-2xl">
             <Droplet className="h-12 w-12 text-teal-400 mx-auto mb-3" />
@@ -354,7 +342,6 @@ export default function Home() {
           </div>
         )}
 
-        {/* STAKING TAB */}
         {activeTab === "staking" && (
           <div className="w-full max-w-2xl grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="p-6 rounded-3xl bg-slate-900 border border-slate-800">
@@ -385,7 +372,6 @@ export default function Home() {
           </div>
         )}
 
-        {/* STORAGE TAB */}
         {activeTab === "storage" && (
           <div className="w-full max-w-md p-6 rounded-3xl bg-slate-900 border border-slate-800 text-center">
             <Database className="h-12 w-12 text-teal-400 mx-auto mb-4" />
@@ -414,3 +400,4 @@ export default function Home() {
     </div>
   );
 }
+
