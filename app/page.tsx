@@ -13,7 +13,7 @@ const aptosConfig = new AptosConfig({ network: Network.TESTNET });
 const aptos = new Aptos(aptosConfig);
 
 export default function Home() {
-  const { connect, disconnect, connected, account, wallets } = useWallet();
+  const { connect, disconnect, connected, account, wallets, signAndSubmitTransaction } = useWallet();
   
   const [activeTab, setActiveTab] = useState<"trade" | "faucet" | "staking" | "storage">("trade");
   const [payAmount, setPayAmount] = useState("1");
@@ -40,7 +40,7 @@ export default function Home() {
     }
   }, []);
 
-  // 2. Fetch Balance chính xác
+  // 2. Fetch Balance
   const fetchBalance = useCallback(async () => {
     if (!account?.address) return;
     const addr = typeof account.address === "string" ? account.address : (account.address as any).toString();
@@ -81,7 +81,7 @@ export default function Home() {
     }
   }, [connected, account, fetchBalance]);
 
-  // 3. Kết nối / Ngắt kết nối Ví
+  // 3. Kết nối Ví
   const handleWalletAction = async () => {
     if (connected) {
       await disconnect();
@@ -108,7 +108,7 @@ export default function Home() {
     }
   };
 
-  // 4. Thực thi Giao dịch (Gọi trực tiếp window.aptos để sửa triệt để lỗi 'function' in undefined)
+  // 4. Thực thi Giao dịch chuẩn Aptos Wallet Standard (SDK v2)
   const handleExecuteTransaction = async (overrideAmount?: number) => {
     if (!connected || !account?.address) {
       alert("Please connect your Petra Wallet first!");
@@ -127,27 +127,19 @@ export default function Home() {
     setTxHash(null);
 
     try {
-      const amountInOctas = Math.floor(amountToUse * 100000000).toString();
+      const amountInOctas = Math.floor(amountToUse * 100000000);
       const recipientAddress = "0x0000000000000000000000000000000000000000000000000000000000000001";
 
-      const payload = {
-        type: "entry_function_payload",
-        function: "0x1::aptos_account::transfer",
-        type_arguments: [],
-        arguments: [recipientAddress, amountInOctas],
-      };
+      // Sử dụng đúng định dạng InputTransactionData của Aptos Standard
+      const response = await signAndSubmitTransaction({
+        data: {
+          function: "0x1::aptos_account::transfer",
+          functionArguments: [recipientAddress, amountInOctas],
+        },
+      });
 
-      let pendingTx: any;
-
-      // Ưu tiên gọi provider trực tiếp của Petra Extension
-      if (typeof window !== "undefined" && (window as any).aptos) {
-        pendingTx = await (window as any).aptos.signAndSubmitTransaction(payload);
-      } else {
-        throw new Error("Petra Wallet extension not detected in window context.");
-      }
-
-      if (pendingTx && pendingTx.hash) {
-        setTxHash(pendingTx.hash);
+      if (response && response.hash) {
+        setTxHash(response.hash);
         setStatusMessage("Transaction Approved & Executed On Shelbynet!");
         setIsError(false);
         setTimeout(() => fetchBalance(), 2000);
