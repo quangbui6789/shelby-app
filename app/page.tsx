@@ -2,18 +2,14 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useWallet } from "@aptos-labs/wallet-adapter-react";
-import { Network, Aptos, AptosConfig, AccountAddress } from "@aptos-labs/ts-sdk";
 import { ShelbyClient } from "@shelby-protocol/sdk/browser";
 import { 
   Wallet, Zap, ArrowLeftRight, Database, TrendingUp, 
   CheckCircle, Droplet, RefreshCw, AlertCircle, Coins 
 } from "lucide-react";
 
-const aptosConfig = new AptosConfig({ network: Network.TESTNET });
-const aptos = new Aptos(aptosConfig);
-
 export default function Home() {
-  const { connect, disconnect, connected, account, wallets, signAndSubmitTransaction } = useWallet();
+  const { connect, disconnect, connected, account, wallets } = useWallet();
 
   const [activeTab, setActiveTab] = useState<"trade" | "faucet" | "staking" | "storage">("trade");
   const [payAmount, setPayAmount] = useState("1");
@@ -40,26 +36,34 @@ export default function Home() {
     }
   }, []);
 
-  // 2. Fetch Balance chính xác
+  // 2. Fetch Balance TRỰC TIẾP TỪ PETRA WALLET (Bắt đúng 10 APT trên Shelbynet)
   const fetchBalance = useCallback(async () => {
-    if (!account?.address) {
+    if (!connected || !account?.address) {
       setBalance("0");
       return;
     }
 
-    const addr = typeof account.address === "string" 
-      ? account.address 
-      : (account.address as any).toString();
-
     try {
-      const addressObj = AccountAddress.from(addr);
-      const amount = await aptos.getAccountAPTAmount({ accountAddress: addressObj });
-      setBalance((amount / 100000000).toFixed(4));
+      // Đọc trực tiếp từ provider window.aptos của Petra
+      if (typeof window !== "undefined" && (window as any).aptos) {
+        const petra = (window as any).aptos;
+        
+        // Gọi getAccountResources từ mạng Shelbynet hiện tại của ví
+        const resources = await petra.getAccountResources(account.address);
+        const coinResource = resources.find(
+          (r: any) => r.type === "0x1::coin::CoinStore<0x1::aptos_coin::AptosCoin>"
+        );
+
+        if (coinResource && coinResource.data) {
+          const val = Number(coinResource.data.coin.value);
+          setBalance((val / 100_000_000).toFixed(4));
+          return;
+        }
+      }
     } catch (err) {
-      console.error("Balance fetch failed:", err);
-      setBalance("0");
+      console.error("Failed to fetch balance from Petra directly:", err);
     }
-  }, [account]);
+  }, [connected, account]);
 
   useEffect(() => {
     if (connected && account) {
@@ -69,7 +73,7 @@ export default function Home() {
     }
   }, [connected, account, fetchBalance]);
 
-  // 3. Kết nối Ví
+  // 3. Kết nối / Ngắt kết nối Ví
   const handleWalletAction = async () => {
     if (connected) {
       await disconnect();
@@ -96,7 +100,7 @@ export default function Home() {
     }
   };
 
-  // 4. Thực thi Giao dịch - ĐÃ SỬA LỖI MULTISIG ADDRESS
+  // 4. Thực thi Giao dịch (Gửi trực tiếp tới Petra Extension để chống lỗi multisigAddress)
   const handleExecuteTransaction = async (overrideAmount?: number) => {
     if (!connected || !account?.address) {
       alert("Please connect your Petra Wallet first!");
@@ -115,17 +119,25 @@ export default function Home() {
     setTxHash(null);
 
     try {
-      const amountInOctas = Math.floor(amountToUse * 100000000);
+      const amountInOctas = Math.floor(amountToUse * 100_000_000);
       const recipientAddress = "0x0000000000000000000000000000000000000000000000000000000000000001";
 
-      // Payload truyền thẳng data object, đúng chuẩn InputTransactionData của Aptos Adapter v2
-      const response = await signAndSubmitTransaction({
-        data: {
-          function: "0x1::aptos_account::transfer",
-          typeArguments: [],
-          functionArguments: [recipientAddress, amountInOctas],
-        },
-      });
+      // Payload tương thích chuẩn Petra Wallet
+      const payload = {
+        type: "entry_function_payload",
+        function: "0x1::aptos_account::transfer",
+        type_arguments: [],
+        arguments: [recipientAddress, amountInOctas.toString()],
+      };
+
+      let response: any;
+
+      // Ưu tiên submit trực tiếp qua Petra Provider nếu có
+      if (typeof window !== "undefined" && (window as any).aptos) {
+        response = await (window as any).aptos.signAndSubmitTransaction(payload);
+      } else {
+        throw new Error("Petra Wallet extension window instance not found.");
+      }
 
       if (response && response.hash) {
         setTxHash(response.hash);
@@ -135,6 +147,7 @@ export default function Home() {
       } else {
         throw new Error("No transaction hash returned.");
       }
+
     } catch (error: any) {
       console.error("Transaction Error:", error);
       setIsError(true);
