@@ -2,15 +2,19 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useWallet } from "@aptos-labs/wallet-adapter-react";
-import { Network } from "@aptos-labs/ts-sdk";
+import { Network, Aptos, AptosConfig } from "@aptos-labs/ts-sdk";
 import { ShelbyClient } from "@shelby-protocol/sdk/browser";
 import { 
   Wallet, Zap, ArrowLeftRight, Database, TrendingUp, 
   CheckCircle, Droplet, RefreshCw, AlertCircle, Coins 
 } from "lucide-react";
 
+// Khởi tạo Aptos SDK v2 Client
+const aptosConfig = new AptosConfig({ network: Network.TESTNET });
+const aptos = new Aptos(aptosConfig);
+
 export default function Home() {
-  const { connect, disconnect, connected, account, wallets } = useWallet();
+  const { connect, disconnect, connected, account, wallets, signAndSubmitTransaction } = useWallet();
   
   const [activeTab, setActiveTab] = useState<"trade" | "faucet" | "staking" | "storage">("trade");
   const [payAmount, setPayAmount] = useState("1");
@@ -22,14 +26,14 @@ export default function Home() {
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [isError, setIsError] = useState(false);
   const [txHash, setTxHash] = useState<string | null>(null);
-  const [shelbyClient, setShelbyClient] = useState<ShelbyClient | null>(null);
+  const [, setShelbyClient] = useState<ShelbyClient | null>(null);
 
-  // 1. Khởi tạo Shelby Client
+  // 1. Khởi tạo Shelby Browser Client đúng tài liệu Shelby Docs
   useEffect(() => {
     try {
       const client = new ShelbyClient({
         network: Network.TESTNET,
-        apiKey: "aptoslabs_demo",
+        apiKey: process.env.NEXT_PUBLIC_SHELBY_API_KEY || "aptoslabs_demo",
       });
       setShelbyClient(client);
     } catch (err) {
@@ -37,26 +41,38 @@ export default function Home() {
     }
   }, []);
 
-  // 2. Lấy số dư APT thực tế trực tiếp từ ví Petra (Shelbynet Node)
+  // 2. Fetch Balance chính xác từ On-Chain Resource (khắc phục lỗi trả về 0 APT)
   const fetchBalance = useCallback(async () => {
     if (!account?.address) return;
     try {
-      const wallet = (window as any).aptos;
-      if (wallet && typeof wallet.getBalance === "function") {
-        const bal = await wallet.getBalance();
-        setBalance((bal / 100000000).toString());
-      } else if (wallet && typeof wallet.getAccountResources === "function") {
-        const resources = await wallet.getAccountResources(account.address);
-        const accountResource = resources.find(
-          (r: any) => r.type === "0x1::coin::CoinStore<0x1::aptos_coin::AptosCoin>"
-        );
-        if (accountResource) {
-          const value = accountResource.data.coin.value;
-          setBalance((Number(value) / 100000000).toString());
-        }
+      // Đọc tài khoản trực tiếp qua Aptos CoinStore Resource
+      const resource = await aptos.getAccountResource<{ coin: { value: string } }>({
+        accountAddress: account.address,
+        resourceType: "0x1::coin::CoinStore<0x1::aptos_coin::AptosCoin>",
+      });
+
+      if (resource?.coin?.value) {
+        const val = Number(resource.coin.value) / 100000000;
+        setBalance(val.toString());
+      } else {
+        const amount = await aptos.getAccountAPTAmount({ accountAddress: account.address });
+        setBalance((amount / 100000000).toString());
       }
     } catch (err) {
       console.error("Error fetching balance:", err);
+      // Fallback lấy dữ liệu RPC
+      try {
+        const response = await fetch(
+          `https://api.testnet.aptoslabs.com/v1/accounts/${account.address}/resource/0x1::coin::CoinStore<0x1::aptos_coin::AptosCoin>`
+        );
+        if (response.ok) {
+          const data = await response.json();
+          const octas = data?.data?.coin?.value || "0";
+          setBalance((Number(octas) / 100000000).toString());
+        }
+      } catch (fallbackErr) {
+        console.error("Fallback balance failed:", fallbackErr);
+      }
     }
   }, [account]);
 
@@ -68,7 +84,7 @@ export default function Home() {
     }
   }, [connected, account, fetchBalance]);
 
-  // 3. Kết nối / Ngắt kết nối ví
+  // 3. Xử lý Kết nối ví
   const handleWalletAction = async () => {
     if (connected) {
       await disconnect();
@@ -79,7 +95,6 @@ export default function Home() {
 
     try {
       const petraWallet = wallets?.find((w) => w.name.toLowerCase().includes("petra"));
-      
       if (petraWallet) {
         await connect(petraWallet.name);
         setStatusMessage("Connected via Petra Wallet!");
@@ -87,7 +102,7 @@ export default function Home() {
       } else if (wallets && wallets.length > 0) {
         await connect(wallets[0].name);
       } else {
-        alert("No Aptos compatible wallet found!");
+        alert("Petra Wallet extension not found!");
         window.open("https://petra.app/", "_blank");
       }
     } catch (error: any) {
@@ -96,7 +111,7 @@ export default function Home() {
     }
   };
 
-  // 4. Ký và gửi giao dịch qua Window Provider (Khắc phục dứt điểm lỗi Multisig)
+  // 4. Thực thi Giao dịch tuân thủ Aptos Standard (Không bị cảnh báo Deprecated)
   const handleExecuteTransaction = async (overrideAmount?: number) => {
     if (!connected || !account?.address) {
       alert("Please connect your Petra Wallet first!");
@@ -115,23 +130,18 @@ export default function Home() {
     setTxHash(null);
 
     try {
-      const amountInOctas = Math.floor(amountToUse * 100000000);
+      const amountInOctas = BigInt(Math.floor(amountToUse * 100000000));
       const recipientAddress = "0x0000000000000000000000000000000000000000000000000000000000000001";
 
-      const wallet = (window as any).aptos;
-      if (!wallet) {
-        throw new Error("Petra Wallet extension not found!");
-      }
-
-      // Format payload legacy chuẩn Petra Extension
-      const payload = {
-        type: "entry_function_payload",
-        function: "0x1::aptos_account::transfer",
-        type_arguments: [],
-        arguments: [recipientAddress, amountInOctas.toString()],
-      };
-
-      const response = await wallet.signAndSubmitTransaction(payload);
+      // Chuẩn Payload v2 không gây lỗi multisig
+      const response = await signAndSubmitTransaction({
+        sender: account.address,
+        data: {
+          function: "0x1::aptos_account::transfer",
+          typeArguments: [],
+          functionArguments: [recipientAddress, amountInOctas],
+        },
+      });
 
       if (response && response.hash) {
         setTxHash(response.hash);
