@@ -14,12 +14,12 @@ const aptos = new Aptos(aptosConfig);
 
 export default function Home() {
   const { connect, disconnect, connected, account, wallets, signAndSubmitTransaction } = useWallet();
-  
+
   const [activeTab, setActiveTab] = useState<"trade" | "faucet" | "staking" | "storage">("trade");
   const [payAmount, setPayAmount] = useState("1");
   const [receiveAmount, setReceiveAmount] = useState("1.50");
   const [faucetAmount, setFaucetAmount] = useState("10");
-  
+
   const [balance, setBalance] = useState<string>("0");
   const [isProcessing, setIsProcessing] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
@@ -46,7 +46,7 @@ export default function Home() {
       setBalance("0");
       return;
     }
-    
+
     const addr = typeof account.address === "string" 
       ? account.address 
       : (account.address as any).toString();
@@ -96,7 +96,7 @@ export default function Home() {
     }
   };
 
-  // 4. Thực thi Giao dịch - ĐÃ SỬA PAYLOAD ĐỂ TRÁNH MULTISIG ERROR
+  // 4. Thực thi Giao dịch - ĐÃ SỬA LỖI MULTISIG ADDRESS
   const handleExecuteTransaction = async (overrideAmount?: number) => {
     if (!connected || !account?.address) {
       alert("Please connect your Petra Wallet first!");
@@ -118,17 +118,14 @@ export default function Home() {
       const amountInOctas = Math.floor(amountToUse * 100000000);
       const recipientAddress = "0x0000000000000000000000000000000000000000000000000000000000000001";
 
-      // Payload đúng format
-      const transactionPayload = {
-        sender: account.address,
+      // Payload truyền thẳng data object, đúng chuẩn InputTransactionData của Aptos Adapter v2
+      const response = await signAndSubmitTransaction({
         data: {
           function: "0x1::aptos_account::transfer",
           typeArguments: [],
-          functionArguments: [recipientAddress, amountInOctas.toString()],
+          functionArguments: [recipientAddress, amountInOctas],
         },
-      };
-
-      const response = await signAndSubmitTransaction(transactionPayload);
+      });
 
       if (response && response.hash) {
         setTxHash(response.hash);
@@ -138,12 +135,11 @@ export default function Home() {
       } else {
         throw new Error("No transaction hash returned.");
       }
-
     } catch (error: any) {
       console.error("Transaction Error:", error);
       setIsError(true);
       const errMessage = error?.message || error?.toString() || "";
-      
+
       if (errMessage.includes("rejected") || error?.code === 4001) {
         setStatusMessage("Transaction Cancelled: You rejected the request in Petra Wallet.");
       } else {
@@ -226,7 +222,7 @@ export default function Home() {
           >
             <ArrowLeftRight className="h-4 w-4" /> Trade / Swap
           </button>
-          
+
           <button
             onClick={() => setActiveTab("faucet")}
             className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-medium text-sm transition ${
@@ -244,7 +240,7 @@ export default function Home() {
           >
             <TrendingUp className="h-4 w-4" /> Staking
           </button>
-          
+
           <button
             onClick={() => setActiveTab("storage")}
             className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-medium text-sm transition ${
@@ -262,7 +258,7 @@ export default function Home() {
               <h2 className="text-xl font-bold text-white">Swap on Shelby</h2>
               <span className="text-xs bg-teal-500/10 text-teal-400 border border-teal-500/30 px-2.5 py-1 rounded-lg">Shelbynet</span>
             </div>
-            
+
             <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 mb-2">
               <div className="flex justify-between text-xs text-slate-400 mb-2">
                 <span>You Pay</span>
@@ -383,7 +379,7 @@ export default function Home() {
             <Database className="h-12 w-12 text-teal-400 mx-auto mb-4" />
             <h2 className="text-xl font-bold text-white mb-2">Shelby Storage Vault</h2>
             <p className="text-sm text-slate-400 mb-2">Store data permanently on Shelbynet.</p>
-            
+
             <div className="border-2 border-dashed border-slate-700 rounded-2xl p-8 mb-4 hover:border-teal-500 transition cursor-pointer">
               <p className="text-xs text-slate-400">Click to upload blob payload onto Shelby Network</p>
             </div>
