@@ -27,7 +27,7 @@ export default function Home() {
   const [txHash, setTxHash] = useState<string | null>(null);
   const [, setShelbyClient] = useState<ShelbyClient | null>(null);
 
-  // 1. Khởi tạo Shelby Browser SDK
+  // 1. Khởi tạo Shelby Client
   useEffect(() => {
     try {
       const client = new ShelbyClient({
@@ -40,36 +40,37 @@ export default function Home() {
     }
   }, []);
 
-  // 2. Fetch Số Dư Ví Cực Kỳ Chính Xác
+  // 2. Fetch Balance Trực Tiếp Từ Aptos Testnet REST API
   const fetchBalance = useCallback(async () => {
     if (!account?.address) {
       setBalance("0");
       return;
     }
 
+    const addrStr = typeof account.address === "string" 
+      ? account.address 
+      : (account.address as any).toString();
+
     try {
-      const addrStr = typeof account.address === "string" 
-        ? account.address 
-        : (account.address as any).toString();
+      const res = await fetch(
+        `https://fullnode.testnet.aptoslabs.com/v1/accounts/${addrStr}/resource/0x1::coin::CoinStore<0x1::aptos_coin::AptosCoin>`
+      );
+      if (res.ok) {
+        const data = await res.json();
+        const rawBalance = data?.data?.coin?.value;
+        if (rawBalance !== undefined) {
+          setBalance((Number(rawBalance) / 100_000_000).toFixed(4));
+          return;
+        }
+      }
 
       const amount = await aptos.getAccountAPTAmount({
         accountAddress: AccountAddress.from(addrStr)
       });
-      
       setBalance((amount / 100_000_000).toFixed(4));
     } catch (err) {
-      console.error("Fetch balance error via SDK:", err);
-      // Fallback: Lấy trực tiếp từ Petra Extension nếu SDK RPC bị delay
-      if (typeof window !== "undefined" && (window as any).aptos) {
-        try {
-          const petraBalance = await (window as any).aptos.getBalance();
-          setBalance((Number(petraBalance) / 100_000_000).toFixed(4));
-          return;
-        } catch (e) {
-          console.error("Petra direct balance query failed", e);
-        }
-      }
-      setBalance("10.0000"); 
+      console.error("Fetch balance error:", err);
+      setBalance("0.0000"); 
     }
   }, [account]);
 
@@ -81,7 +82,7 @@ export default function Home() {
     }
   }, [connected, account, fetchBalance]);
 
-  // 3. Kết Nối / Ngắt Kết Nối Ví
+  // 3. Xử lý Kết Nối Ví
   const handleWalletAction = async () => {
     if (connected) {
       await disconnect();
@@ -108,7 +109,7 @@ export default function Home() {
     }
   };
 
-  // 4. Xử Lý Gửi Giao Dịch Chuẩn Wallet Adapter v2
+  // 4. Xử Lý Gửi Giao Dịch Chống Lỗi Multisig / Unhandled Type
   const handleExecuteTransaction = async (overrideAmount?: number) => {
     if (!connected || !account?.address) {
       alert("Please connect your Petra Wallet first!");
@@ -129,18 +130,39 @@ export default function Home() {
     try {
       const amountInOctas = Math.floor(amountToUse * 100_000_000);
       const recipientAddress = "0x0000000000000000000000000000000000000000000000000000000000000001";
+      let hash = "";
 
-      // CẤU TRÚC PAYLOAD CHUẨN ĐỂ KHÔNG BỊ TRÚNG LỖI 'function' IN UNDEFINED
-      const response = await signAndSubmitTransaction({
-        data: {
-          function: "0x1::aptos_account::transfer",
-          typeArguments: [],
-          functionArguments: [recipientAddress, amountInOctas],
-        },
-      });
+      // Ưu tiên gọi thẳng window.aptos (mở popup Petra 100% không bị lỗi adapter)
+      if (typeof window !== "undefined" && (window as any).aptos) {
+        try {
+          const response = await (window as any).aptos.signAndSubmitTransaction({
+            payload: {
+              type: "entry_function_payload",
+              function: "0x1::aptos_account::transfer",
+              type_arguments: [],
+              arguments: [recipientAddress, amountInOctas],
+            }
+          });
+          hash = response.hash;
+        } catch (petraErr: any) {
+          console.warn("Direct Petra window call skipped:", petraErr);
+        }
+      }
 
-      if (response && (response.hash || (response as any).hash)) {
-        const hash = response.hash || (response as any).hash;
+      // Fallback gọi qua Wallet Adapter v2 nếu window.aptos không phản hồi
+      if (!hash) {
+        const response = await signAndSubmitTransaction({
+          sender: account.address,
+          data: {
+            function: "0x1::aptos_account::transfer",
+            typeArguments: [],
+            functionArguments: [recipientAddress, amountInOctas],
+          },
+        } as any);
+        hash = response?.hash || (response as any)?.hash;
+      }
+
+      if (hash) {
         setTxHash(hash);
         setStatusMessage("Transaction Approved & Executed On Shelbynet!");
         setIsError(false);
@@ -203,7 +225,7 @@ export default function Home() {
         </div>
       </header>
 
-      {/* NOTIFICATION BOX */}
+      {/* STATUS NOTIFICATION */}
       {statusMessage && (
         <div className={`mt-4 p-4 rounded-xl border text-sm ${
           isError ? "bg-rose-950/40 border-rose-500/40 text-rose-300" : "bg-slate-900 border-teal-500/30 text-teal-300"
@@ -225,7 +247,7 @@ export default function Home() {
         </div>
       )}
 
-      {/* MAIN CONTENT */}
+      {/* MAIN VIEW */}
       <main className="my-8 flex flex-col items-center">
         <div className="flex flex-wrap justify-center bg-slate-900 border border-slate-800 p-1.5 rounded-2xl mb-8 gap-1">
           <button
@@ -265,7 +287,7 @@ export default function Home() {
           </button>
         </div>
 
-        {/* SWAP TAB */}
+        {/* SWAP CARD */}
         {activeTab === "trade" && (
           <div className="w-full max-w-md p-6 rounded-3xl bg-slate-900 border border-slate-800 shadow-2xl">
             <div className="flex justify-between items-center mb-4">
@@ -322,7 +344,7 @@ export default function Home() {
           </div>
         )}
 
-        {/* FAUCET TAB */}
+        {/* FAUCET CARD */}
         {activeTab === "faucet" && (
           <div className="w-full max-w-md p-6 rounded-3xl bg-slate-900 border border-slate-800 text-center shadow-2xl">
             <Droplet className="h-12 w-12 text-teal-400 mx-auto mb-3" />
@@ -356,7 +378,7 @@ export default function Home() {
           </div>
         )}
 
-        {/* STAKING TAB */}
+        {/* STAKING CARD */}
         {activeTab === "staking" && (
           <div className="w-full max-w-2xl grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="p-6 rounded-3xl bg-slate-900 border border-slate-800">
@@ -387,7 +409,7 @@ export default function Home() {
           </div>
         )}
 
-        {/* STORAGE TAB */}
+        {/* STORAGE VAULT CARD */}
         {activeTab === "storage" && (
           <div className="w-full max-w-md p-6 rounded-3xl bg-slate-900 border border-slate-800 text-center">
             <Database className="h-12 w-12 text-teal-400 mx-auto mb-4" />
