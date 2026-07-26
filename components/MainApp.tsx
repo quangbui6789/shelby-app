@@ -59,7 +59,7 @@ export default function MainApp() {
     }
   }, [connected, account, fetchBalance]);
 
-  // Xử lý kết nối ví Petra tối ưu hóa trực tiếp cổng Extension
+  // Xử lý kết nối ví tuân thủ 100% Aptos Wallet Standard
   const handleWalletAction = async () => {
     if (connected) {
       await disconnect();
@@ -69,27 +69,17 @@ export default function MainApp() {
     }
 
     try {
-      // 1. Kiểm tra ưu tiên trực tiếp Cổng Extension Petra trong Browser
-      if (typeof window !== "undefined" && "aptos" in window) {
-        const petraWallet = wallets?.find((w) => w.name.toLowerCase().includes("petra"));
-        if (petraWallet) {
-          await connect(petraWallet.name);
-        } else {
-          await (window as any).aptos.connect();
-        }
+      const petraWallet = wallets?.find((w) => w.name.toLowerCase().includes("petra"));
+
+      if (petraWallet) {
+        await connect(petraWallet.name);
         setStatusMessage("Connected via Petra Wallet!");
         setIsError(false);
-        return;
-      }
-
-      // 2. Dự phòng Adapter Wallet nếu cài qua bộ chuyển đổi khác
-      if (wallets && wallets.length > 0) {
-        const petraWallet = wallets.find((w) => w.name.toLowerCase().includes("petra"));
-        await connect(petraWallet ? petraWallet.name : wallets[0].name);
-        setStatusMessage("Connected via Wallet Adapter!");
+      } else if (wallets && wallets.length > 0) {
+        await connect(wallets[0].name);
+        setStatusMessage(`Connected via ${wallets[0].name}!`);
         setIsError(false);
       } else {
-        // Chỉ mở tab mới nếu trình duyệt hoàn toàn không phát hiện Extension ví Aptos nào
         window.open("https://petra.app/", "_blank");
       }
     } catch (error: any) {
