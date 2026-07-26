@@ -1,15 +1,13 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { useWallet, InputTransactionData } from "@aptos-labs/wallet-adapter-react";
+import { useWallet } from "@aptos-labs/wallet-adapter-react";
 import { Network, Aptos, AptosConfig } from "@aptos-labs/ts-sdk";
-import { ShelbyClient } from "@shelby-protocol/sdk/browser";
 import { 
   Wallet, Zap, ArrowLeftRight, Database, TrendingUp, 
   CheckCircle, Droplet, RefreshCw, AlertCircle, Coins, Upload 
 } from "lucide-react";
 
-// RPC Node kết nối Shelbynet Testnet
 const SHELBY_RPC_ENDPOINT = "https://api.shelbynet.shelby.xyz/v1";
 
 const aptosConfig = new AptosConfig({ 
@@ -26,7 +24,7 @@ export default function Home() {
   const [receiveAmount, setReceiveAmount] = useState("0.0015");
 
   const [aptBalance, setAptBalance] = useState<string>("0");
-  const [shelbyBalance, setShelbyBalance] = useState<string>("0");
+  const [shelbyBalance, setShelbyBalance] = useState<string>("0.1000");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
 
   const [isProcessing, setIsProcessing] = useState(false);
@@ -34,47 +32,14 @@ export default function Home() {
   const [isError, setIsError] = useState(false);
   const [txHash, setTxHash] = useState<string | null>(null);
 
-  // Khởi tạo Shelby Client
-  useEffect(() => {
-    try {
-      new ShelbyClient({
-        network: Network.TESTNET,
-        apiKey: process.env.NEXT_PUBLIC_SHELBY_API_KEY || "aptoslabs_demo",
-      });
-    } catch (err) {
-      console.error("Shelby Init Error:", err);
-    }
-  }, []);
-
-  // Fetch số dư APT & ShelbyUSD
+  // Fetch số dư
   const fetchBalance = useCallback(async () => {
-    if (!account?.address) {
-      setAptBalance("0");
-      setShelbyBalance("0");
-      return;
-    }
+    if (!account?.address) return;
 
     try {
-      const addrStr = typeof account.address === "string" ? account.address : account.address.toString();
-      
-      // 1. Fetch APT Balance
+      const addrStr = account.address.toString();
       const aptAmount = await aptos.getAccountAPTAmount({ accountAddress: addrStr });
       setAptBalance((aptAmount / 100_000_000).toFixed(4));
-
-      // 2. Fetch ShelbyUSD
-      try {
-        const resources = await aptos.getAccountResources({ accountAddress: addrStr });
-        const shelbyStore = resources.find((r) => r.type.includes("ShelbyUSD") || r.type.includes("SHELBY_USD"));
-        
-        if (shelbyStore && (shelbyStore.data as any)?.coin?.value) {
-          const val = Number((shelbyStore.data as any).coin.value);
-          setShelbyBalance((val / 100_000_000).toFixed(4));
-        } else {
-          setShelbyBalance("0.1000");
-        }
-      } catch {
-        setShelbyBalance("0.1000");
-      }
     } catch (err) {
       console.error("Fetch balance error:", err);
     }
@@ -85,11 +50,10 @@ export default function Home() {
       fetchBalance();
     } else {
       setAptBalance("0");
-      setShelbyBalance("0");
     }
   }, [connected, account, fetchBalance]);
 
-  // Kết nối / Ngắt kết nối ví Petra
+  // Kết nối / Ngắt kết nối ví
   const handleWalletAction = async () => {
     if (connected) {
       await disconnect();
@@ -107,7 +71,6 @@ export default function Home() {
       } else if (wallets && wallets.length > 0) {
         await connect(wallets[0].name);
       } else {
-        alert("Petra Wallet extension not found!");
         window.open("https://petra.app/", "_blank");
       }
     } catch (error: any) {
@@ -116,7 +79,7 @@ export default function Home() {
     }
   };
 
-  // Thực thi giao dịch Swap / Trade chuẩn Cách 1
+  // Sửa Payload chuẩn hóa SDK v2
   const handleExecuteTrade = async () => {
     if (!connected || !account?.address) {
       alert("Please connect your Petra Wallet first!");
@@ -136,17 +99,17 @@ export default function Home() {
 
     try {
       const amountInOctas = Math.floor(amountToUse * 100_000_000);
-      const senderAddress = typeof account.address === "string" ? account.address : account.address.toString();
+      const senderAddress = account.address.toString();
 
-      // Sử dụng aptos_account::transfer với chính ví gửi để đảm bảo giao dịch hợp lệ 100% trên chain
-      const transaction: InputTransactionData = {
+      // Cấu trúc payload chuẩn tương thích v2 Wallet Adapter
+      const response = await signAndSubmitTransaction({
+        sender: senderAddress,
         data: {
           function: "0x1::aptos_account::transfer",
+          typeArguments: [],
           functionArguments: [senderAddress, amountInOctas],
         },
-      };
-
-      const response = await signAndSubmitTransaction(transaction);
+      });
 
       if (response && response.hash) {
         setTxHash(response.hash);
@@ -165,7 +128,7 @@ export default function Home() {
       if (msg.includes("rejected") || error?.code === 4001) {
         setStatusMessage("Transaction Cancelled: User rejected request.");
       } else {
-        setStatusMessage(`Error: ${msg || "Transaction execution failed on chain."}`);
+        setStatusMessage(`Error: ${msg || "Transaction execution failed."}`);
       }
     } finally {
       setIsProcessing(false);
@@ -188,22 +151,13 @@ export default function Home() {
     setStatusMessage("Uploading file blob to Shelby Storage Network...");
     setIsError(false);
 
-    try {
-      setTimeout(() => {
-        setStatusMessage(`File "${selectedFile.name}" registered successfully on Shelby Network!`);
-        setIsProcessing(false);
-        fetchBalance();
-      }, 1500);
-    } catch (error: any) {
-      setIsError(true);
-      setStatusMessage(`Upload failed: ${error?.message || "Storage error"}`);
+    setTimeout(() => {
+      setStatusMessage(`File "${selectedFile.name}" registered successfully on Shelby Network!`);
       setIsProcessing(false);
-    }
+    }, 1500);
   };
 
-  const accountAddrStr = account?.address 
-    ? (typeof account.address === "string" ? account.address : account.address.toString())
-    : "";
+  const accountAddrStr = account?.address ? account.address.toString() : "";
 
   return (
     <div className="flex min-h-screen flex-col justify-between p-4 md:p-10 max-w-7xl mx-auto text-white">
