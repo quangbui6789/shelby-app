@@ -59,6 +59,7 @@ export default function MainApp() {
     }
   }, [connected, account, fetchBalance]);
 
+  // Xử lý kết nối ví Petra tối ưu hóa trực tiếp cổng Extension
   const handleWalletAction = async () => {
     if (connected) {
       await disconnect();
@@ -68,18 +69,32 @@ export default function MainApp() {
     }
 
     try {
-      const petraWallet = wallets?.find((w) => w.name.toLowerCase().includes("petra"));
-      if (petraWallet) {
-        await connect(petraWallet.name);
+      // 1. Kiểm tra ưu tiên trực tiếp Cổng Extension Petra trong Browser
+      if (typeof window !== "undefined" && "aptos" in window) {
+        const petraWallet = wallets?.find((w) => w.name.toLowerCase().includes("petra"));
+        if (petraWallet) {
+          await connect(petraWallet.name);
+        } else {
+          await (window as any).aptos.connect();
+        }
         setStatusMessage("Connected via Petra Wallet!");
         setIsError(false);
-      } else if (wallets && wallets.length > 0) {
-        await connect(wallets[0].name);
+        return;
+      }
+
+      // 2. Dự phòng Adapter Wallet nếu cài qua bộ chuyển đổi khác
+      if (wallets && wallets.length > 0) {
+        const petraWallet = wallets.find((w) => w.name.toLowerCase().includes("petra"));
+        await connect(petraWallet ? petraWallet.name : wallets[0].name);
+        setStatusMessage("Connected via Wallet Adapter!");
+        setIsError(false);
       } else {
+        // Chỉ mở tab mới nếu trình duyệt hoàn toàn không phát hiện Extension ví Aptos nào
         window.open("https://petra.app/", "_blank");
       }
     } catch (error: any) {
-      setStatusMessage(`Connection failed: ${error?.message || "User cancelled"}`);
+      console.error("Connection error:", error);
+      setStatusMessage(`Connection failed: ${error?.message || "User cancelled request"}`);
       setIsError(true);
     }
   };
