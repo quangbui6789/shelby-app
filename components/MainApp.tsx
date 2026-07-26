@@ -59,7 +59,6 @@ export default function MainApp() {
     }
   }, [connected, account, fetchBalance]);
 
-  // Xử lý kết nối ví tuân thủ 100% Aptos Wallet Standard
   const handleWalletAction = async () => {
     if (connected) {
       await disconnect();
@@ -69,6 +68,7 @@ export default function MainApp() {
     }
 
     try {
+      // Tìm ví Petra sẵn có trong adapter
       const petraWallet = wallets?.find((w) => w.name.toLowerCase().includes("petra"));
 
       if (petraWallet) {
@@ -80,7 +80,7 @@ export default function MainApp() {
         setStatusMessage(`Connected via ${wallets[0].name}!`);
         setIsError(false);
       } else {
-        window.open("https://petra.app/", "_blank");
+        alert("Phát hiện trình duyệt chưa có Extension Petra! Hãy kiểm tra lại tiện ích mở rộng trong Chrome/Cốc Cốc.");
       }
     } catch (error: any) {
       console.error("Connection error:", error);
