@@ -11,15 +11,10 @@
   "dependencies": {
     "@aptos-labs/ts-sdk": "^1.36.0",
     "@aptos-labs/wallet-adapter-react": "^3.7.1",
-    "@mizuwallet-sdk/core": "^0.0.8",
     "@shelby-protocol/sdk": "^0.1.0",
-    "@telegram-apps/bridge": "^0.1.2",
-    "aptos": "^1.21.0",
     "axios": "^1.6.8",
-    "got": "^11.8.6",
     "lucide-react": "^0.344.0",
     "next": "^14.1.0",
-    "petra-plugin-wallet-adapter": "^0.4.5",
     "react": "^18.2.0",
     "react-dom": "^18.2.0"
   },
