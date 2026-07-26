@@ -6,6 +6,13 @@ const nextConfig = {
   eslint: {
     ignoreDuringBuilds: true,
   },
+  experimental: {
+    serverComponentsExternalPackages: [
+      "@aptos-labs/wallet-adapter-react",
+      "@aptos-labs/ts-sdk",
+      "got"
+    ],
+  },
   webpack: (config, { isServer }) => {
     if (!isServer) {
       config.resolve.fallback = {
@@ -15,6 +22,8 @@ const nextConfig = {
         tls: false,
         dns: false,
         child_process: false,
+        got: false,
+        "got/dist/source": false,
       };
     }
     return config;
