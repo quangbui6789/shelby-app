@@ -11,7 +11,6 @@ const apiKey = process.env.NEXT_PUBLIC_SHELBY_API_KEY || "";
 const SHELBY_RPC = "https://rpc.shelbynet.shelby.xyz/v1";
 
 export default function MainApp() {
-  // An toàn tuyệt đối: Kiểm tra context wallet trước khi giải nén
   const walletContext = useWallet();
 
   const [activeTab, setActiveTab] = useState<"trade" | "faucet" | "staking" | "storage">("trade");
@@ -39,7 +38,7 @@ export default function MainApp() {
     try {
       const { Aptos, AptosConfig, Network } = await import("@aptos-labs/ts-sdk");
       const aptosConfig = new AptosConfig({ 
-        network: Network.CUSTOM,
+        network: Network.TESTNET,
         fullnode: SHELBY_RPC,
         clientConfig: { API_KEY: apiKey }
       });
@@ -134,8 +133,9 @@ export default function MainApp() {
 
     try {
       const { Aptos, AptosConfig, Network } = await import("@aptos-labs/ts-sdk");
+      
       const aptosConfig = new AptosConfig({ 
-        network: Network.CUSTOM,
+        network: Network.TESTNET,
         fullnode: SHELBY_RPC,
         clientConfig: { API_KEY: apiKey }
       });
@@ -204,14 +204,14 @@ export default function MainApp() {
       } = await import("@shelby-protocol/sdk/browser");
 
       const aptosConfig = new AptosConfig({ 
-        network: Network.CUSTOM,
+        network: Network.TESTNET,
         fullnode: SHELBY_RPC,
         clientConfig: { API_KEY: apiKey }
       });
       const aptosClient = new Aptos(aptosConfig);
 
       const shelbyClient = new ShelbyClient({
-        network: Network.CUSTOM,
+        network: Network.TESTNET,
         apiKey: apiKey,
       });
 
