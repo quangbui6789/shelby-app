@@ -1,9 +1,7 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useWallet, InputTransactionData } from "@aptos-labs/wallet-adapter-react";
-import { Network, Aptos, AptosConfig, AccountAddress } from "@aptos-labs/ts-sdk";
-
 import { 
   Wallet, Zap, ArrowLeftRight, Database, TrendingUp, 
   CheckCircle, Droplet, RefreshCw, AlertCircle, Coins, Upload 
@@ -13,22 +11,6 @@ const apiKey = process.env.NEXT_PUBLIC_SHELBY_API_KEY || "";
 const SHELBY_RPC = "https://rpc.shelbynet.shelby.xyz/v1";
 
 export default function MainApp() {
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
-
-  // Khởi tạo Aptos Client an toàn trong useMemo, tránh crash khi SSR
-  const aptosClient = useMemo(() => {
-    const aptosConfig = new AptosConfig({ 
-      network: Network.CUSTOM,
-      fullnode: SHELBY_RPC,
-      clientConfig: { API_KEY: apiKey }
-    });
-    return new Aptos(aptosConfig);
-  }, []);
-
   const { connect, disconnect, connected, account, wallets, signAndSubmitTransaction } = useWallet();
 
   const [activeTab, setActiveTab] = useState<"trade" | "faucet" | "staking" | "storage">("trade");
@@ -47,13 +29,20 @@ export default function MainApp() {
   const fetchBalance = useCallback(async () => {
     if (!account?.address) return;
     try {
-      const addrStr = account.address.toString();
+      const { Aptos, AptosConfig, Network } = await import("@aptos-labs/ts-sdk");
+      const aptosConfig = new AptosConfig({ 
+        network: Network.CUSTOM,
+        fullnode: SHELBY_RPC,
+        clientConfig: { API_KEY: apiKey }
+      });
+      const aptosClient = new Aptos(aptosConfig);
 
+      const addrStr = account.address.toString();
       const aptAmount = await aptosClient.getAccountAPTAmount({ accountAddress: addrStr });
       setAptBalance((aptAmount / 100_000_000).toLocaleString());
 
       const resources = await aptosClient.getAccountResources({ accountAddress: addrStr });
-      const shelbyResource = resources.find((r) => 
+      const shelbyResource = resources.find((r: any) => 
         r.type.includes("coin::CoinStore") && r.type.toLowerCase().includes("shelby")
       );
 
@@ -68,7 +57,7 @@ export default function MainApp() {
       setAptBalance("20");
       setShelbyBalance("0.2000");
     }
-  }, [account, aptosClient]);
+  }, [account]);
 
   useEffect(() => {
     if (connected && account) {
@@ -78,15 +67,6 @@ export default function MainApp() {
       setShelbyBalance("0");
     }
   }, [connected, account, fetchBalance]);
-
-  // Đảm bảo không render bất kỳ UI nào khi chưa Mount ở Browser
-  if (!mounted) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-950 text-teal-400">
-        <RefreshCw className="h-8 w-8 animate-spin" />
-      </div>
-    );
-  }
 
   const handleWalletAction = async () => {
     if (connected) {
@@ -135,6 +115,14 @@ export default function MainApp() {
     setTxHash(null);
 
     try {
+      const { Aptos, AptosConfig, Network } = await import("@aptos-labs/ts-sdk");
+      const aptosConfig = new AptosConfig({ 
+        network: Network.CUSTOM,
+        fullnode: SHELBY_RPC,
+        clientConfig: { API_KEY: apiKey }
+      });
+      const aptosClient = new Aptos(aptosConfig);
+
       const amountInOctas = Math.floor(amountToUse * 100_000_000);
       const senderAddress = account.address.toString();
 
@@ -188,6 +176,7 @@ export default function MainApp() {
     setTxHash(null);
 
     try {
+      const { AccountAddress, Network, Aptos, AptosConfig } = await import("@aptos-labs/ts-sdk");
       const {
         createDefaultErasureCodingProvider,
         generateCommitments,
@@ -195,6 +184,13 @@ export default function MainApp() {
         ShelbyBlobClient,
         ShelbyClient,
       } = await import("@shelby-protocol/sdk/browser");
+
+      const aptosConfig = new AptosConfig({ 
+        network: Network.CUSTOM,
+        fullnode: SHELBY_RPC,
+        clientConfig: { API_KEY: apiKey }
+      });
+      const aptosClient = new Aptos(aptosConfig);
 
       const shelbyClient = new ShelbyClient({
         network: Network.CUSTOM,
