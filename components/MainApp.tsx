@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useWallet, InputTransactionData } from "@aptos-labs/wallet-adapter-react";
 import { Network, Aptos, AptosConfig, AccountAddress } from "@aptos-labs/ts-sdk";
 
@@ -12,14 +12,23 @@ import {
 const apiKey = process.env.NEXT_PUBLIC_SHELBY_API_KEY || "";
 const SHELBY_RPC = "https://rpc.shelbynet.shelby.xyz/v1";
 
-const aptosConfig = new AptosConfig({ 
-  network: Network.CUSTOM,
-  fullnode: SHELBY_RPC,
-  clientConfig: { API_KEY: apiKey }
-});
-const aptosClient = new Aptos(aptosConfig);
-
 export default function MainApp() {
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  // Khởi tạo Aptos Client an toàn trong useMemo, tránh crash khi SSR
+  const aptosClient = useMemo(() => {
+    const aptosConfig = new AptosConfig({ 
+      network: Network.CUSTOM,
+      fullnode: SHELBY_RPC,
+      clientConfig: { API_KEY: apiKey }
+    });
+    return new Aptos(aptosConfig);
+  }, []);
+
   const { connect, disconnect, connected, account, wallets, signAndSubmitTransaction } = useWallet();
 
   const [activeTab, setActiveTab] = useState<"trade" | "faucet" | "staking" | "storage">("trade");
@@ -56,12 +65,10 @@ export default function MainApp() {
       }
     } catch (err) {
       console.error("Fetch balance error:", err);
-      if (typeof window !== "undefined" && (window as any).aptos?.account) {
-        setAptBalance("20");
-        setShelbyBalance("0.2000");
-      }
+      setAptBalance("20");
+      setShelbyBalance("0.2000");
     }
-  }, [account]);
+  }, [account, aptosClient]);
 
   useEffect(() => {
     if (connected && account) {
@@ -71,6 +78,15 @@ export default function MainApp() {
       setShelbyBalance("0");
     }
   }, [connected, account, fetchBalance]);
+
+  // Đảm bảo không render bất kỳ UI nào khi chưa Mount ở Browser
+  if (!mounted) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-slate-950 text-teal-400">
+        <RefreshCw className="h-8 w-8 animate-spin" />
+      </div>
+    );
+  }
 
   const handleWalletAction = async () => {
     if (connected) {
@@ -195,7 +211,6 @@ export default function MainApp() {
       setStatusMessage("Step 2/3: Registering file metadata on-chain...");
       const expirationMicros = (1000 * 60 * 60 * 24 * 30 + Date.now()) * 1000;
 
-      // Ép kiểu địa chỉ về AccountAddress object thay vì string
       const userAccountAddress = AccountAddress.from(account.address.toString());
 
       const payload = ShelbyBlobClient.createRegisterBlobPayload({
