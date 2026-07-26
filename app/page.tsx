@@ -1,20 +1,28 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { useWallet } from "@aptos-labs/wallet-adapter-react";
+import { useWallet, InputTransactionData } from "@aptos-labs/wallet-adapter-react";
 import { Network, Aptos, AptosConfig } from "@aptos-labs/ts-sdk";
+import { 
+  type BlobCommitments, 
+  createDefaultErasureCodingProvider, 
+  generateCommitments,
+  expectedTotalChunksets,
+  ShelbyBlobClient,
+  ShelbyClient
+} from "@shelby-protocol/sdk/browser";
+
 import { 
   Wallet, Zap, ArrowLeftRight, Database, TrendingUp, 
   CheckCircle, Droplet, RefreshCw, AlertCircle, Coins, Upload 
 } from "lucide-react";
 
-const SHELBY_RPC_ENDPOINT = "https://api.shelbynet.shelby.xyz/v1";
+const aptosConfig = new AptosConfig({ network: Network.TESTNET });
+const aptosClient = new Aptos(aptosConfig);
 
-const aptosConfig = new AptosConfig({ 
+const shelbyClient = new ShelbyClient({
   network: Network.TESTNET,
-  fullnode: SHELBY_RPC_ENDPOINT 
 });
-const aptos = new Aptos(aptosConfig);
 
 export default function Home() {
   const { connect, disconnect, connected, account, wallets, signAndSubmitTransaction } = useWallet();
@@ -32,13 +40,12 @@ export default function Home() {
   const [isError, setIsError] = useState(false);
   const [txHash, setTxHash] = useState<string | null>(null);
 
-  // Fetch số dư
+  // Fetch số dư tài khoản
   const fetchBalance = useCallback(async () => {
     if (!account?.address) return;
-
     try {
       const addrStr = account.address.toString();
-      const aptAmount = await aptos.getAccountAPTAmount({ accountAddress: addrStr });
+      const aptAmount = await aptosClient.getAccountAPTAmount({ accountAddress: addrStr });
       setAptBalance((aptAmount / 100_000_000).toFixed(4));
     } catch (err) {
       console.error("Fetch balance error:", err);
@@ -53,7 +60,7 @@ export default function Home() {
     }
   }, [connected, account, fetchBalance]);
 
-  // Kết nối / Ngắt kết nối ví
+  // Thao tác kết nối / ngắt kết nối ví
   const handleWalletAction = async () => {
     if (connected) {
       await disconnect();
@@ -79,7 +86,7 @@ export default function Home() {
     }
   };
 
-  // Sửa Payload chuẩn hóa SDK v2
+  // Thao tác Swap / Trade
   const handleExecuteTrade = async () => {
     if (!connected || !account?.address) {
       alert("Please connect your Petra Wallet first!");
@@ -101,22 +108,22 @@ export default function Home() {
       const amountInOctas = Math.floor(amountToUse * 100_000_000);
       const senderAddress = account.address.toString();
 
-      // Cấu trúc payload chuẩn tương thích v2 Wallet Adapter
-      const response = await signAndSubmitTransaction({
-        sender: senderAddress,
+      const transaction: InputTransactionData = {
         data: {
           function: "0x1::aptos_account::transfer",
           typeArguments: [],
           functionArguments: [senderAddress, amountInOctas],
         },
-      });
+      };
+
+      const response = await signAndSubmitTransaction(transaction);
 
       if (response && response.hash) {
         setTxHash(response.hash);
         setStatusMessage("Swap Transaction Executed Successfully on Shelbynet!");
         setIsError(false);
 
-        await aptos.waitForTransaction({ transactionHash: response.hash });
+        await aptosClient.waitForTransaction({ transactionHash: response.hash });
         fetchBalance();
       } else {
         throw new Error("No transaction hash returned.");
@@ -135,7 +142,7 @@ export default function Home() {
     }
   };
 
-  // Upload Storage Vault
+  // Quy trình Upload File chuẩn theo Tài liệu Shelby (3 Steps)
   const handleUploadStorage = async () => {
     if (!connected || !account?.address) {
       alert("Please connect your Petra Wallet first!");
@@ -148,13 +155,60 @@ export default function Home() {
     }
 
     setIsProcessing(true);
-    setStatusMessage("Uploading file blob to Shelby Storage Network...");
     setIsError(false);
+    setTxHash(null);
 
-    setTimeout(() => {
-      setStatusMessage(`File "${selectedFile.name}" registered successfully on Shelby Network!`);
+    try {
+      // Step 1: File Encoding
+      setStatusMessage("Step 1/3: Encoding file into commitments...");
+      const fileData = Buffer.isBuffer(selectedFile)
+        ? selectedFile
+        : Buffer.from(await selectedFile.arrayBuffer());
+
+      const provider = await createDefaultErasureCodingProvider();
+      const commitments: BlobCommitments = await generateCommitments(provider, fileData);
+
+      // Step 2: On-Chain Registration
+      setStatusMessage("Step 2/3: Registering file metadata on-chain...");
+      const expirationMicros = (1000 * 60 * 60 * 24 * 30 + Date.now()) * 1000; // 30 ngày
+
+      const payload = ShelbyBlobClient.createRegisterBlobPayload({
+        account: account.address.toString(),
+        blobName: selectedFile.name,
+        blobMerkleRoot: commitments.blob_merkle_root,
+        numChunksets: expectedTotalChunksets(commitments.raw_data_size),
+        expirationMicros: expirationMicros,
+        blobSize: commitments.raw_data_size,
+      });
+
+      const transaction: InputTransactionData = {
+        data: payload,
+      };
+
+      const transactionSubmitted = await signAndSubmitTransaction(transaction);
+      setTxHash(transactionSubmitted.hash);
+
+      await aptosClient.waitForTransaction({
+        transactionHash: transactionSubmitted.hash,
+      });
+
+      // Step 3: RPC Upload
+      setStatusMessage("Step 3/3: Uploading file payload to Shelby RPC Storage...");
+      await shelbyClient.rpc.putBlob({
+        account: account.address.toString(),
+        blobName: selectedFile.name,
+        blobData: new Uint8Array(await selectedFile.arrayBuffer()),
+      });
+
+      setStatusMessage(`File "${selectedFile.name}" uploaded successfully to Shelby Storage Network!`);
+      setIsError(false);
+    } catch (error: any) {
+      console.error("Storage Upload Error:", error);
+      setIsError(true);
+      setStatusMessage(`Upload failed: ${error?.message || "Error processing file upload."}`);
+    } finally {
       setIsProcessing(false);
-    }, 1500);
+    }
   };
 
   const accountAddrStr = account?.address ? account.address.toString() : "";
@@ -220,7 +274,7 @@ export default function Home() {
         </div>
       )}
 
-      {/* MAIN INTERFACE */}
+      {/* MAIN CONTENT */}
       <main className="my-8 flex flex-col items-center">
         <div className="flex flex-wrap justify-center bg-slate-900 border border-slate-800 p-1.5 rounded-2xl mb-8 gap-1">
           <button
@@ -260,7 +314,7 @@ export default function Home() {
           </button>
         </div>
 
-        {/* TAB 1: SWAP CARD */}
+        {/* TAB 1: SWAP */}
         {activeTab === "trade" && (
           <div className="w-full max-w-md p-6 rounded-3xl bg-slate-900 border border-slate-800 shadow-2xl">
             <div className="flex justify-between items-center mb-4">
@@ -317,7 +371,7 @@ export default function Home() {
           </div>
         )}
 
-        {/* TAB 2: FAUCET CARD */}
+        {/* TAB 2: FAUCET */}
         {activeTab === "faucet" && (
           <div className="w-full max-w-md p-6 rounded-3xl bg-slate-900 border border-slate-800 text-center shadow-2xl">
             <Droplet className="h-12 w-12 text-teal-400 mx-auto mb-3" />
@@ -333,7 +387,7 @@ export default function Home() {
           </div>
         )}
 
-        {/* TAB 3: STAKING CARD */}
+        {/* TAB 3: STAKING */}
         {activeTab === "staking" && (
           <div className="w-full max-w-2xl grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="p-6 rounded-3xl bg-slate-900 border border-slate-800">
@@ -364,7 +418,7 @@ export default function Home() {
           </div>
         )}
 
-        {/* TAB 4: STORAGE VAULT CARD */}
+        {/* TAB 4: STORAGE VAULT */}
         {activeTab === "storage" && (
           <div className="w-full max-w-md p-6 rounded-3xl bg-slate-900 border border-slate-800 text-center">
             <Database className="h-12 w-12 text-teal-400 mx-auto mb-4" />
