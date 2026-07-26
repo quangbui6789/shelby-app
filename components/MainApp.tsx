@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useWallet, InputTransactionData } from "@aptos-labs/wallet-adapter-react";
-import { Network, Aptos, AptosConfig } from "@aptos-labs/ts-sdk";
+import { Network, Aptos, AptosConfig, AccountAddress } from "@aptos-labs/ts-sdk";
 
 import { 
   Wallet, Zap, ArrowLeftRight, Database, TrendingUp, 
@@ -172,7 +172,6 @@ export default function MainApp() {
     setTxHash(null);
 
     try {
-      // Dynamic import Shelby SDK chỉ khi gọi hàm upload để tránh lỗi WASM ở SSR/Client hydration
       const {
         createDefaultErasureCodingProvider,
         generateCommitments,
@@ -196,8 +195,11 @@ export default function MainApp() {
       setStatusMessage("Step 2/3: Registering file metadata on-chain...");
       const expirationMicros = (1000 * 60 * 60 * 24 * 30 + Date.now()) * 1000;
 
+      // Ép kiểu địa chỉ về AccountAddress object thay vì string
+      const userAccountAddress = AccountAddress.from(account.address.toString());
+
       const payload = ShelbyBlobClient.createRegisterBlobPayload({
-        account: account.address.toString(),
+        account: userAccountAddress,
         blobName: selectedFile.name,
         blobMerkleRoot: commitments.blob_merkle_root,
         numChunksets: expectedTotalChunksets(commitments.raw_data_size),
@@ -218,7 +220,7 @@ export default function MainApp() {
 
       setStatusMessage("Step 3/3: Uploading file payload to Shelby RPC Storage...");
       await shelbyClient.rpc.putBlob({
-        account: account.address.toString(),
+        account: userAccountAddress,
         blobName: selectedFile.name,
         blobData: fileData,
       });
