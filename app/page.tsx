@@ -1,7 +1,6 @@
-import dynamicImport from "next/dynamic";
+"use client";
 
-export const dynamic = "force-dynamic";
-export const revalidate = 0;
+import dynamicImport from "next/dynamic";
 
 const MainApp = dynamicImport(() => import("../components/MainApp"), {
   ssr: false,
