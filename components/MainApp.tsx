@@ -161,9 +161,8 @@ export default function MainApp() {
       });
 
       setStatusMessage("Step 1/3: Encoding file into commitments...");
-      const fileData = Buffer.isBuffer(selectedFile)
-        ? selectedFile
-        : Buffer.from(await selectedFile.arrayBuffer());
+      const arrayBuffer = await selectedFile.arrayBuffer();
+      const fileData = new Uint8Array(arrayBuffer);
 
       const provider = await createDefaultErasureCodingProvider();
       const commitments: BlobCommitments = await generateCommitments(provider, fileData);
@@ -195,7 +194,7 @@ export default function MainApp() {
       await shelbyClient.rpc.putBlob({
         account: account.address.toString(),
         blobName: selectedFile.name,
-        blobData: new Uint8Array(await selectedFile.arrayBuffer()),
+        blobData: fileData,
       });
 
       setStatusMessage(`File "${selectedFile.name}" uploaded successfully to Shelby Storage Network!`);
