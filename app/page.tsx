@@ -6,7 +6,7 @@ const MainApp = dynamicImport(() => import("../components/MainApp"), {
   ssr: false,
   loading: () => (
     <div className="flex min-h-screen items-center justify-center bg-slate-950 text-teal-400 font-medium">
-      Loading Shelby Protocol dApp...
+      Loading Shelby dApp...
     </div>
   ),
 });
