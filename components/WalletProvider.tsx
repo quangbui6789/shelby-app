@@ -9,10 +9,9 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     <AptosWalletAdapterProvider
       autoConnect={true}
       dappConfig={{
-        network: Network.TESTNET,
+        network: Network.CUSTOM, // Để CUSTOM thay vì TESTNET
       }}
       onError={(error) => {
-        // Bỏ qua lỗi mismatch network nếu user dùng custom RPC Shelbynet
         if (error?.toString().includes("Invalid network")) return;
         console.error("Wallet Adapter Error:", error);
       }}
