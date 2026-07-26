@@ -1,16 +1,20 @@
 import "./globals.css";
-import { ReactNode } from "react";
+import { WalletProvider } from "@/components/WalletProvider";
 
 export const metadata = {
   title: "Shelby dApp",
-  description: "Shelby Protocol Ecosystem",
+  description: "Shelbynet Ecosystem",
 };
 
-export default function RootLayout({ children }: { children: ReactNode }) {
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   return (
     <html lang="en">
-      <body className="antialiased bg-slate-950 text-slate-100 min-h-screen">
-        {children}
+      <body className="bg-slate-950 text-white min-h-screen">
+        <WalletProvider>{children}</WalletProvider>
       </body>
     </html>
   );
