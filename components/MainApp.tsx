@@ -11,7 +11,8 @@ const apiKey = process.env.NEXT_PUBLIC_SHELBY_API_KEY || "";
 const SHELBY_RPC = "https://rpc.shelbynet.shelby.xyz/v1";
 
 export default function MainApp() {
-  const { connect, disconnect, connected, account, wallets, signAndSubmitTransaction } = useWallet();
+  // An toàn tuyệt đối: Kiểm tra context wallet trước khi giải nén
+  const walletContext = useWallet();
 
   const [activeTab, setActiveTab] = useState<"trade" | "faucet" | "staking" | "storage">("trade");
   const [payAmount, setPayAmount] = useState("0.001");
@@ -25,6 +26,13 @@ export default function MainApp() {
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [isError, setIsError] = useState(false);
   const [txHash, setTxHash] = useState<string | null>(null);
+
+  const account = walletContext?.account;
+  const connected = walletContext?.connected ?? false;
+  const wallets = walletContext?.wallets;
+  const connect = walletContext?.connect;
+  const disconnect = walletContext?.disconnect;
+  const signAndSubmitTransaction = walletContext?.signAndSubmitTransaction;
 
   const fetchBalance = useCallback(async () => {
     if (!account?.address) return;
@@ -68,13 +76,23 @@ export default function MainApp() {
     }
   }, [connected, account, fetchBalance]);
 
+  if (!walletContext) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-slate-950 text-teal-400 font-mono text-sm">
+        Initializing Wallet Context...
+      </div>
+    );
+  }
+
   const handleWalletAction = async () => {
-    if (connected) {
+    if (connected && disconnect) {
       await disconnect();
       setStatusMessage("Disconnected from wallet.");
       setIsError(false);
       return;
     }
+
+    if (!connect) return;
 
     try {
       const petraWallet = wallets?.find((w) => w.name.toLowerCase().includes("petra"));
@@ -98,7 +116,7 @@ export default function MainApp() {
   };
 
   const handleExecuteTrade = async () => {
-    if (!connected || !account?.address) {
+    if (!connected || !account?.address || !signAndSubmitTransaction) {
       alert("Please connect your Petra Wallet first!");
       return;
     }
@@ -161,7 +179,7 @@ export default function MainApp() {
   };
 
   const handleUploadStorage = async () => {
-    if (!connected || !account?.address) {
+    if (!connected || !account?.address || !signAndSubmitTransaction) {
       alert("Please connect your Petra Wallet first!");
       return;
     }
