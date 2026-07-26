@@ -3,14 +3,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { useWallet, InputTransactionData } from "@aptos-labs/wallet-adapter-react";
 import { Network, Aptos, AptosConfig } from "@aptos-labs/ts-sdk";
-import { 
-  type BlobCommitments, 
-  createDefaultErasureCodingProvider, 
-  generateCommitments,
-  expectedTotalChunksets,
-  ShelbyBlobClient,
-  ShelbyClient
-} from "@shelby-protocol/sdk/browser";
 
 import { 
   Wallet, Zap, ArrowLeftRight, Database, TrendingUp, 
@@ -18,10 +10,8 @@ import {
 } from "lucide-react";
 
 const apiKey = process.env.NEXT_PUBLIC_SHELBY_API_KEY || "";
-// Endpoint Shelbynet Custom RPC
 const SHELBY_RPC = "https://rpc.shelbynet.shelby.xyz/v1";
 
-// Cấu hình Aptos Client sử dụng Network.CUSTOM
 const aptosConfig = new AptosConfig({ 
   network: Network.CUSTOM,
   fullnode: SHELBY_RPC,
@@ -45,17 +35,14 @@ export default function MainApp() {
   const [isError, setIsError] = useState(false);
   const [txHash, setTxHash] = useState<string | null>(null);
 
-  // Fetch số dư từ On-Chain / Ví
   const fetchBalance = useCallback(async () => {
     if (!account?.address) return;
     try {
       const addrStr = account.address.toString();
 
-      // 1. Lấy balance APT
       const aptAmount = await aptosClient.getAccountAPTAmount({ accountAddress: addrStr });
       setAptBalance((aptAmount / 100_000_000).toLocaleString());
 
-      // 2. Lấy balance ShelbyUSD token / resources
       const resources = await aptosClient.getAccountResources({ accountAddress: addrStr });
       const shelbyResource = resources.find((r) => 
         r.type.includes("coin::CoinStore") && r.type.toLowerCase().includes("shelby")
@@ -65,11 +52,11 @@ export default function MainApp() {
         const val = (shelbyResource.data as any)?.coin?.value || "0";
         setShelbyBalance((Number(val) / 100_000_000).toFixed(4));
       } else {
-        setShelbyBalance("0.2000"); // Fallback
+        setShelbyBalance("0.2000");
       }
     } catch (err) {
       console.error("Fetch balance error:", err);
-      if ((window as any).aptos?.account) {
+      if (typeof window !== "undefined" && (window as any).aptos?.account) {
         setAptBalance("20");
         setShelbyBalance("0.2000");
       }
@@ -185,7 +172,15 @@ export default function MainApp() {
     setTxHash(null);
 
     try {
-      // Đã đổi sang Network.CUSTOM
+      // Dynamic import Shelby SDK chỉ khi gọi hàm upload để tránh lỗi WASM ở SSR/Client hydration
+      const {
+        createDefaultErasureCodingProvider,
+        generateCommitments,
+        expectedTotalChunksets,
+        ShelbyBlobClient,
+        ShelbyClient,
+      } = await import("@shelby-protocol/sdk/browser");
+
       const shelbyClient = new ShelbyClient({
         network: Network.CUSTOM,
         apiKey: apiKey,
@@ -196,7 +191,7 @@ export default function MainApp() {
       const fileData = new Uint8Array(arrayBuffer);
 
       const provider = await createDefaultErasureCodingProvider();
-      const commitments: BlobCommitments = await generateCommitments(provider, fileData);
+      const commitments = await generateCommitments(provider, fileData);
 
       setStatusMessage("Step 2/3: Registering file metadata on-chain...");
       const expirationMicros = (1000 * 60 * 60 * 24 * 30 + Date.now()) * 1000;
