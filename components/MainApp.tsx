@@ -114,7 +114,6 @@ export default function MainApp() {
     }
   };
 
-  // Hàm Swap bypass Adapter để gọi trực tiếp extension Petra
   const handleExecuteTrade = async () => {
     if (!connected || !account?.address) {
       alert("Please connect your Petra Wallet first!");
@@ -154,11 +153,12 @@ export default function MainApp() {
 
       let pendingTx: any = null;
 
-      // Bypass Adapter: Gọi thẳng qua provider `window.aptos` của ví Petra
       if (typeof window !== "undefined" && (window as any).aptos) {
         pendingTx = await (window as any).aptos.signAndSubmitTransaction(transactionPayload);
       } else if (signAndSubmitTransaction) {
-        pendingTx = await signAndSubmitTransaction({ data: transactionPayload.payload });
+        pendingTx = await signAndSubmitTransaction({
+          data: transactionPayload.payload as any,
+        } as any);
       } else {
         throw new Error("Petra Wallet extension is not detected.");
       }
@@ -189,7 +189,6 @@ export default function MainApp() {
     }
   };
 
-  // Hàm Storage Upload bypass Adapter
   const handleUploadStorage = async () => {
     if (!connected || !account?.address) {
       alert("Please connect your Petra Wallet first!");
@@ -251,7 +250,9 @@ export default function MainApp() {
       if (typeof window !== "undefined" && (window as any).aptos) {
         pendingTx = await (window as any).aptos.signAndSubmitTransaction({ payload });
       } else if (signAndSubmitTransaction) {
-        pendingTx = await signAndSubmitTransaction({ data: payload });
+        pendingTx = await signAndSubmitTransaction({
+          data: payload as any,
+        } as any);
       } else {
         throw new Error("Petra Wallet extension is not detected.");
       }
