@@ -1,16 +1,7 @@
-"use client";
+import ClientOnlyApp from "../components/ClientOnlyApp";
 
-import dynamicImport from "next/dynamic";
-
-const MainApp = dynamicImport(() => import("../components/MainApp"), {
-  ssr: false,
-  loading: () => (
-    <div className="flex min-h-screen items-center justify-center bg-slate-950 text-teal-400">
-      Loading Shelby dApp...
-    </div>
-  ),
-});
+export const dynamic = "force-dynamic";
 
 export default function Home() {
-  return <MainApp />;
+  return <ClientOnlyApp />;
 }
