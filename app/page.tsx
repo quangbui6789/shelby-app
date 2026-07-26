@@ -1,5 +1,7 @@
 "use client";
 
+export const dynamic = "force-dynamic";
+
 import { useState, useEffect, useCallback } from "react";
 import { useWallet, InputTransactionData } from "@aptos-labs/wallet-adapter-react";
 import { Network, Aptos, AptosConfig } from "@aptos-labs/ts-sdk";
@@ -24,12 +26,6 @@ const aptosConfig = new AptosConfig({
   clientConfig: { API_KEY: apiKey }
 });
 const aptosClient = new Aptos(aptosConfig);
-
-// Khởi tạo Shelby Client cho Browser theo đúng Docs
-const shelbyClient = new ShelbyClient({
-  network: Network.TESTNET,
-  apiKey: apiKey
-});
 
 export default function Home() {
   const { connect, disconnect, connected, account, wallets, signAndSubmitTransaction } = useWallet();
@@ -166,6 +162,12 @@ export default function Home() {
     setTxHash(null);
 
     try {
+      // Khởi tạo ShelbyClient an toàn phía Client
+      const shelbyClient = new ShelbyClient({
+        network: Network.TESTNET,
+        apiKey: apiKey,
+      });
+
       // Step 1: File Encoding
       setStatusMessage("Step 1/3: Encoding file into commitments...");
       const fileData = Buffer.isBuffer(selectedFile)
