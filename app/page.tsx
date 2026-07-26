@@ -17,11 +17,18 @@ import {
   CheckCircle, Droplet, RefreshCw, AlertCircle, Coins, Upload 
 } from "lucide-react";
 
-const aptosConfig = new AptosConfig({ network: Network.TESTNET });
+// Khởi tạo Aptos Client
+const apiKey = process.env.NEXT_PUBLIC_SHELBY_API_KEY || "";
+const aptosConfig = new AptosConfig({ 
+  network: Network.TESTNET,
+  clientConfig: { API_KEY: apiKey }
+});
 const aptosClient = new Aptos(aptosConfig);
 
+// Khởi tạo Shelby Client cho Browser theo đúng Docs
 const shelbyClient = new ShelbyClient({
   network: Network.TESTNET,
+  apiKey: apiKey
 });
 
 export default function Home() {
@@ -40,7 +47,7 @@ export default function Home() {
   const [isError, setIsError] = useState(false);
   const [txHash, setTxHash] = useState<string | null>(null);
 
-  // Fetch số dư tài khoản
+  // Fetch số dư
   const fetchBalance = useCallback(async () => {
     if (!account?.address) return;
     try {
@@ -60,7 +67,7 @@ export default function Home() {
     }
   }, [connected, account, fetchBalance]);
 
-  // Thao tác kết nối / ngắt kết nối ví
+  // Kết nối / Ngắt kết nối ví
   const handleWalletAction = async () => {
     if (connected) {
       await disconnect();
@@ -86,7 +93,7 @@ export default function Home() {
     }
   };
 
-  // Thao tác Swap / Trade
+  // Thực hiện Swap
   const handleExecuteTrade = async () => {
     if (!connected || !account?.address) {
       alert("Please connect your Petra Wallet first!");
@@ -142,7 +149,7 @@ export default function Home() {
     }
   };
 
-  // Quy trình Upload File chuẩn theo Tài liệu Shelby (3 Steps)
+  // Upload File theo quy trình Shelby Browser SDK
   const handleUploadStorage = async () => {
     if (!connected || !account?.address) {
       alert("Please connect your Petra Wallet first!");
@@ -170,7 +177,7 @@ export default function Home() {
 
       // Step 2: On-Chain Registration
       setStatusMessage("Step 2/3: Registering file metadata on-chain...");
-      const expirationMicros = (1000 * 60 * 60 * 24 * 30 + Date.now()) * 1000; // 30 ngày
+      const expirationMicros = (1000 * 60 * 60 * 24 * 30 + Date.now()) * 1000;
 
       const payload = ShelbyBlobClient.createRegisterBlobPayload({
         account: account.address.toString(),
@@ -252,7 +259,7 @@ export default function Home() {
         </div>
       </header>
 
-      {/* NOTIFICATION BOX */}
+      {/* NOTIFICATION */}
       {statusMessage && (
         <div className={`mt-4 p-4 rounded-xl border text-sm ${
           isError ? "bg-rose-950/40 border-rose-500/40 text-rose-300" : "bg-slate-900 border-teal-500/30 text-teal-300"
@@ -314,7 +321,7 @@ export default function Home() {
           </button>
         </div>
 
-        {/* TAB 1: SWAP */}
+        {/* SWAP */}
         {activeTab === "trade" && (
           <div className="w-full max-w-md p-6 rounded-3xl bg-slate-900 border border-slate-800 shadow-2xl">
             <div className="flex justify-between items-center mb-4">
@@ -371,7 +378,7 @@ export default function Home() {
           </div>
         )}
 
-        {/* TAB 2: FAUCET */}
+        {/* FAUCET */}
         {activeTab === "faucet" && (
           <div className="w-full max-w-md p-6 rounded-3xl bg-slate-900 border border-slate-800 text-center shadow-2xl">
             <Droplet className="h-12 w-12 text-teal-400 mx-auto mb-3" />
@@ -387,7 +394,7 @@ export default function Home() {
           </div>
         )}
 
-        {/* TAB 3: STAKING */}
+        {/* STAKING */}
         {activeTab === "staking" && (
           <div className="w-full max-w-2xl grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="p-6 rounded-3xl bg-slate-900 border border-slate-800">
@@ -418,7 +425,7 @@ export default function Home() {
           </div>
         )}
 
-        {/* TAB 4: STORAGE VAULT */}
+        {/* STORAGE VAULT */}
         {activeTab === "storage" && (
           <div className="w-full max-w-md p-6 rounded-3xl bg-slate-900 border border-slate-800 text-center">
             <Database className="h-12 w-12 text-teal-400 mx-auto mb-4" />
