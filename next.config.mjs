@@ -1,7 +1,6 @@
-/** @type {import('next').NextInsets}.NextConfig */
+/** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-  // Tắt kiểm tra TypeScript và ESLint khi build trên Vercel nếu cần
   typescript: {
     ignoreBuildErrors: true,
   },
@@ -9,7 +8,14 @@ const nextConfig = {
     ignoreDuringBuilds: true,
   },
   webpack: (config, { isServer }) => {
-    // Nếu đang build ở Server (Node.js), không bundle các SDK browser/wasm
+    config.resolve.fallback = {
+      ...config.resolve.fallback,
+      fs: false,
+      net: false,
+      tls: false,
+      crypto: false,
+    };
+
     if (isServer) {
       config.externals = [
         ...(config.externals || []),
