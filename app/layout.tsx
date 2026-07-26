@@ -1,6 +1,9 @@
-"use client";
-
 import "./globals.css";
+
+export const metadata = {
+  title: "Shelby dApp",
+  description: "Shelby Protocol Ecosystem",
+};
 
 export default function RootLayout({
   children,
@@ -9,7 +12,9 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body className="antialiased bg-slate-950 text-slate-100">
+        {children}
+      </body>
     </html>
   );
 }
