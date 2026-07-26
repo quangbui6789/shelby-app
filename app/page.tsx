@@ -2,7 +2,6 @@
 
 import dynamic from "next/dynamic";
 
-// Dùng relative path để chắc chắn Next.js tìm đúng file
 const MainApp = dynamic(() => import("../components/MainApp"), {
   ssr: false,
   loading: () => (
@@ -12,7 +11,6 @@ const MainApp = dynamic(() => import("../components/MainApp"), {
   ),
 });
 
-// Ép trang này thành Fully Dynamic Rendering (không Prerender tĩnh trên Server)
 export const dynamicParams = true;
 export const revalidate = 0;
 
