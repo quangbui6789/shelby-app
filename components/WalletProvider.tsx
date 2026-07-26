@@ -10,9 +10,10 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       autoConnect={true}
       dappConfig={{
         network: Network.TESTNET,
-        aptosApiKey: process.env.NEXT_PUBLIC_SHELBY_API_KEY,
       }}
       onError={(error) => {
+        // Bỏ qua lỗi mismatch network nếu user dùng custom RPC Shelbynet
+        if (error?.toString().includes("Invalid network")) return;
         console.error("Wallet Adapter Error:", error);
       }}
     >
