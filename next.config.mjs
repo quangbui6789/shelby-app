@@ -6,14 +6,16 @@ const nextConfig = {
   eslint: {
     ignoreDuringBuilds: true,
   },
-  experimental: {
-    serverComponentsExternalPackages: [
-      "@aptos-labs/wallet-adapter-react",
-      "@aptos-labs/ts-sdk",
-      "got"
-    ],
-  },
   webpack: (config, { isServer }) => {
+    // Chặn Webpack không bundle các module ví phụ trợ gây lỗi
+    config.resolve.alias = {
+      ...config.resolve.alias,
+      '@telegram-apps/bridge': false,
+      '@mizuwallet-sdk/core': false,
+      'got': false,
+      'aptos': false,
+    };
+
     if (!isServer) {
       config.resolve.fallback = {
         ...config.resolve.fallback,
@@ -22,10 +24,9 @@ const nextConfig = {
         tls: false,
         dns: false,
         child_process: false,
-        got: false,
-        "got/dist/source": false,
       };
     }
+
     return config;
   },
 };
