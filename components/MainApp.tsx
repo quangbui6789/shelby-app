@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { useWallet, InputTransactionData } from "@aptos-labs/wallet-adapter-react";
+import { useWallet } from "@aptos-labs/wallet-adapter-react";
 import { 
   Wallet, Zap, ArrowLeftRight, Database, TrendingUp, 
   CheckCircle, Droplet, RefreshCw, AlertCircle, Coins, Upload 
@@ -38,7 +38,7 @@ export default function MainApp() {
     try {
       const { Aptos, AptosConfig, Network } = await import("@aptos-labs/ts-sdk");
       const aptosConfig = new AptosConfig({ 
-        network: Network.TESTNET,
+        network: Network.CUSTOM,
         fullnode: SHELBY_RPC,
         clientConfig: { API_KEY: apiKey }
       });
@@ -114,8 +114,9 @@ export default function MainApp() {
     }
   };
 
+  // Hàm Swap bypass Adapter để gọi trực tiếp extension Petra
   const handleExecuteTrade = async () => {
-    if (!connected || !account?.address || !signAndSubmitTransaction) {
+    if (!connected || !account?.address) {
       alert("Please connect your Petra Wallet first!");
       return;
     }
@@ -133,9 +134,8 @@ export default function MainApp() {
 
     try {
       const { Aptos, AptosConfig, Network } = await import("@aptos-labs/ts-sdk");
-      
       const aptosConfig = new AptosConfig({ 
-        network: Network.TESTNET,
+        network: Network.CUSTOM,
         fullnode: SHELBY_RPC,
         clientConfig: { API_KEY: apiKey }
       });
@@ -144,25 +144,36 @@ export default function MainApp() {
       const amountInOctas = Math.floor(amountToUse * 100_000_000);
       const senderAddress = account.address.toString();
 
-      const transactionPayload: InputTransactionData = {
-        data: {
+      const transactionPayload = {
+        payload: {
           function: "0x1::aptos_account::transfer",
           typeArguments: [],
           functionArguments: [senderAddress, amountInOctas],
-        },
+        }
       };
 
-      const response = await signAndSubmitTransaction(transactionPayload);
+      let pendingTx: any = null;
 
-      if (response && response.hash) {
-        setTxHash(response.hash);
+      // Bypass Adapter: Gọi thẳng qua provider `window.aptos` của ví Petra
+      if (typeof window !== "undefined" && (window as any).aptos) {
+        pendingTx = await (window as any).aptos.signAndSubmitTransaction(transactionPayload);
+      } else if (signAndSubmitTransaction) {
+        pendingTx = await signAndSubmitTransaction({ data: transactionPayload.payload });
+      } else {
+        throw new Error("Petra Wallet extension is not detected.");
+      }
+
+      const hash = pendingTx?.hash || pendingTx?.transactionHash;
+
+      if (hash) {
+        setTxHash(hash);
         setStatusMessage("Swap Transaction Executed Successfully on Shelbynet!");
         setIsError(false);
 
-        await aptosClient.waitForTransaction({ transactionHash: response.hash });
+        await aptosClient.waitForTransaction({ transactionHash: hash });
         fetchBalance();
       } else {
-        throw new Error("No transaction hash returned.");
+        throw new Error("No transaction hash returned from Petra.");
       }
     } catch (error: any) {
       console.error("Trade Error:", error);
@@ -178,8 +189,9 @@ export default function MainApp() {
     }
   };
 
+  // Hàm Storage Upload bypass Adapter
   const handleUploadStorage = async () => {
-    if (!connected || !account?.address || !signAndSubmitTransaction) {
+    if (!connected || !account?.address) {
       alert("Please connect your Petra Wallet first!");
       return;
     }
@@ -204,14 +216,14 @@ export default function MainApp() {
       } = await import("@shelby-protocol/sdk/browser");
 
       const aptosConfig = new AptosConfig({ 
-        network: Network.TESTNET,
+        network: Network.CUSTOM,
         fullnode: SHELBY_RPC,
         clientConfig: { API_KEY: apiKey }
       });
       const aptosClient = new Aptos(aptosConfig);
 
       const shelbyClient = new ShelbyClient({
-        network: Network.TESTNET,
+        network: Network.CUSTOM,
         apiKey: apiKey,
       });
 
@@ -224,7 +236,6 @@ export default function MainApp() {
 
       setStatusMessage("Step 2/3: Registering file metadata on-chain...");
       const expirationMicros = (1000 * 60 * 60 * 24 * 30 + Date.now()) * 1000;
-
       const userAccountAddress = AccountAddress.from(account.address.toString());
 
       const payload = ShelbyBlobClient.createRegisterBlobPayload({
@@ -236,16 +247,19 @@ export default function MainApp() {
         blobSize: commitments.raw_data_size,
       });
 
-      const transactionPayload: InputTransactionData = {
-        data: payload,
-      };
+      let pendingTx: any = null;
+      if (typeof window !== "undefined" && (window as any).aptos) {
+        pendingTx = await (window as any).aptos.signAndSubmitTransaction({ payload });
+      } else if (signAndSubmitTransaction) {
+        pendingTx = await signAndSubmitTransaction({ data: payload });
+      } else {
+        throw new Error("Petra Wallet extension is not detected.");
+      }
 
-      const transactionSubmitted = await signAndSubmitTransaction(transactionPayload);
-      setTxHash(transactionSubmitted.hash);
+      const hash = pendingTx?.hash || pendingTx?.transactionHash;
+      setTxHash(hash);
 
-      await aptosClient.waitForTransaction({
-        transactionHash: transactionSubmitted.hash,
-      });
+      await aptosClient.waitForTransaction({ transactionHash: hash });
 
       setStatusMessage("Step 3/3: Uploading file payload to Shelby RPC Storage...");
       await shelbyClient.rpc.putBlob({
