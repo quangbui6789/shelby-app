@@ -1,8 +1,9 @@
-"use client";
+import dynamic from "next/dynamic";
 
-import nextDynamic from "next/dynamic";
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
-const MainApp = nextDynamic(() => import("../components/MainApp"), {
+const MainApp = dynamic(() => import("../components/MainApp"), {
   ssr: false,
   loading: () => (
     <div className="flex min-h-screen items-center justify-center bg-slate-950 text-teal-400">
@@ -10,9 +11,6 @@ const MainApp = nextDynamic(() => import("../components/MainApp"), {
     </div>
   ),
 });
-
-export const dynamic = "force-dynamic";
-export const revalidate = 0;
 
 export default function Home() {
   return <MainApp />;
