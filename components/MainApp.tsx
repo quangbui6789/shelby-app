@@ -18,11 +18,12 @@ import {
 } from "lucide-react";
 
 const apiKey = process.env.NEXT_PUBLIC_SHELBY_API_KEY || "";
-// Sử dụng Endpoint Shelbynet Testnet
+// Endpoint Shelbynet Custom RPC
 const SHELBY_RPC = "https://rpc.shelbynet.shelby.xyz/v1";
 
+// Cấu hình Aptos Client sử dụng Network.CUSTOM
 const aptosConfig = new AptosConfig({ 
-  network: Network.TESTNET,
+  network: Network.CUSTOM,
   fullnode: SHELBY_RPC,
   clientConfig: { API_KEY: apiKey }
 });
@@ -44,7 +45,7 @@ export default function MainApp() {
   const [isError, setIsError] = useState(false);
   const [txHash, setTxHash] = useState<string | null>(null);
 
-  // Fetch chính xác số dư từ On-Chain / Ví
+  // Fetch số dư từ On-Chain / Ví
   const fetchBalance = useCallback(async () => {
     if (!account?.address) return;
     try {
@@ -64,11 +65,10 @@ export default function MainApp() {
         const val = (shelbyResource.data as any)?.coin?.value || "0";
         setShelbyBalance((Number(val) / 100_000_000).toFixed(4));
       } else {
-        setShelbyBalance("0.2000"); // Mặc định fallback theo ví nếu chưa query được struct
+        setShelbyBalance("0.2000"); // Fallback
       }
     } catch (err) {
       console.error("Fetch balance error:", err);
-      // Nếu RPC bị block network check, dùng window.aptos lấy trực tiếp số dư
       if ((window as any).aptos?.account) {
         setAptBalance("20");
         setShelbyBalance("0.2000");
@@ -135,7 +135,6 @@ export default function MainApp() {
       const amountInOctas = Math.floor(amountToUse * 100_000_000);
       const senderAddress = account.address.toString();
 
-      // Transaction gửi APT hoặc Swap trên Shelbynet
       const transactionPayload: InputTransactionData = {
         data: {
           function: "0x1::aptos_account::transfer",
@@ -144,7 +143,6 @@ export default function MainApp() {
         },
       };
 
-      // Gọi ký thông qua Adapter
       const response = await signAndSubmitTransaction(transactionPayload);
 
       if (response && response.hash) {
@@ -187,8 +185,9 @@ export default function MainApp() {
     setTxHash(null);
 
     try {
+      // Đã đổi sang Network.CUSTOM
       const shelbyClient = new ShelbyClient({
-        network: Network.TESTNET,
+        network: Network.CUSTOM,
         apiKey: apiKey,
       });
 
