@@ -9,12 +9,15 @@ export default function Providers({ children }: { children: React.ReactNode }) {
       autoConnect={false}
       dappConfig={{
         network: Network.CUSTOM,
-        // Điền Endpoint RPC của Shelby Testnet
-        customNetworkUrl: "https://rpc.shelbynet.shelby.xyz/v1", 
+        // Dùng đúng URL hiển thị trên ví Petra của bạn:
+        customNetworkUrl: "https://api.shelbynet.shelby.xyz/v1",
+        aptosApiKeys: {
+          custom: process.env.NEXT_PUBLIC_SHELBY_API_KEY,
+        },
       }}
       onError={(error) => {
-        // Bắt lỗi để không bị tràn màn hình đỏ ra UI
-        console.warn("Wallet Adapter Network Warning:", error);
+        // Bắt lỗi nhẹ để không bắn màn hình đỏ ngắt kết nối
+        console.log("Wallet connection status:", error);
       }}
     >
       {children}
