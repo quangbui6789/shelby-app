@@ -133,12 +133,12 @@ function AppContent() {
     try {
       const amountInOctas = Math.floor(amountToUse * 100_000_000);
 
-      const response = await signAndSubmitTransaction({
-        payload: {
+      const response: any = await signAndSubmitTransaction({
+        data: {
           function: "0x1::aptos_account::transfer",
           typeArguments: [],
           functionArguments: [userAddress, amountInOctas.toString()],
-        },
+        }
       } as any);
 
       if (response?.hash) {
@@ -199,7 +199,7 @@ function AppContent() {
       const expirationMicros = (1000 * 60 * 60 * 24 * 30 + Date.now()) * 1000;
       const userAccountAddress = aptosSdk.AccountAddress.from(userAddress);
 
-      const rawPayload = shelbySdk.ShelbyBlobClient.createRegisterBlobPayload({
+      const rawPayload: any = shelbySdk.ShelbyBlobClient.createRegisterBlobPayload({
         account: userAccountAddress,
         blobName: selectedFile.name,
         blobMerkleRoot: commitments.blob_merkle_root,
@@ -208,15 +208,15 @@ function AppContent() {
         blobSize: commitments.raw_data_size,
       });
 
-      const response = await signAndSubmitTransaction({
-        payload: {
-          function: rawPayload.function,
-          typeArguments: rawPayload.type_arguments,
-          functionArguments: rawPayload.arguments,
-        },
+      const response: any = await signAndSubmitTransaction({
+        data: {
+          function: rawPayload.function || rawPayload.payload?.function,
+          typeArguments: rawPayload.type_arguments || rawPayload.payload?.typeArguments || [],
+          functionArguments: rawPayload.arguments || rawPayload.payload?.functionArguments || [],
+        }
       } as any);
 
-      setTxHash(response.hash);
+      setTxHash(response?.hash);
 
       setStatusMessage("Bước 3/3: Tải dữ liệu Blob lên Shelby RPC Storage...");
       await shelbyClient.rpc.putBlob({
