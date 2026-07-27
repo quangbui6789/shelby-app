@@ -1,23 +1,24 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { useWallet, WalletName } from "@aptos-labs/wallet-adapter-react";
+import { useWallet } from "@aptos-labs/wallet-adapter-react";
 import { 
   Wallet, Zap, ArrowLeftRight, Database, TrendingUp, 
   CheckCircle, Droplet, RefreshCw, AlertCircle, Coins, Upload 
 } from "lucide-react";
 
+// Tự định nghĩa Window Interface cho Aptos Wallet
+declare global {
+  interface Window {
+    aptos?: any;
+  }
+}
+
+const SHELBY_RPC = "https://rpc.shelbynet.shelby.xyz/v1";
 const apiKey = process.env.NEXT_PUBLIC_SHELBY_API_KEY || "";
 
 export default function MainApp() {
-  const {
-    connect,
-    disconnect,
-    account,
-    connected,
-    signAndSubmitTransaction,
-    wallets,
-  } = useWallet();
+  const { account, connected, connect, disconnect, wallets } = useWallet();
 
   const [activeTab, setActiveTab] = useState<"trade" | "faucet" | "staking" | "storage">("trade");
   const [payAmount, setPayAmount] = useState("0.001");
@@ -32,13 +33,14 @@ export default function MainApp() {
   const [isError, setIsError] = useState(false);
   const [txHash, setTxHash] = useState<string | null>(null);
 
-  // Lấy số dư sử dụng Aptos Testnet chuẩn
+  // Lấy số dư trực tiếp từ Shelby RPC
   const fetchBalance = useCallback(async (addrStr: string) => {
     if (!addrStr) return;
     try {
       const { Aptos, AptosConfig, Network } = await import("@aptos-labs/ts-sdk");
       const aptosConfig = new AptosConfig({
-        network: Network.TESTNET,
+        network: Network.CUSTOM,
+        fullnode: SHELBY_RPC,
         clientConfig: { API_KEY: apiKey },
       });
       const aptosClient = new Aptos(aptosConfig);
@@ -58,7 +60,7 @@ export default function MainApp() {
         setShelbyBalance("0.2000");
       }
     } catch (err) {
-      console.error("Fetch balance error:", err);
+      console.warn("Shelby RPC Balance Fetch Fallback:", err);
       setAptBalance("20");
       setShelbyBalance("0.2000");
     }
@@ -78,8 +80,15 @@ export default function MainApp() {
 
     try {
       const petraWallet = wallets?.find((w) => w.name === "Petra");
-      await connect(petraWallet ? petraWallet.name : ("Petra" as WalletName));
-      setStatusMessage("Connected via Petra Wallet!");
+      if (petraWallet) {
+        await connect(petraWallet.name);
+      } else if (typeof window !== "undefined" && window.aptos) {
+        await window.aptos.connect();
+      } else {
+        alert("Vui lòng cài đặt Petra Wallet!");
+        return;
+      }
+      setStatusMessage("Connected to Shelby Network via Petra!");
       setIsError(false);
     } catch (error: any) {
       console.error("Connection error:", error);
@@ -94,76 +103,79 @@ export default function MainApp() {
     }
   }, [account, fetchBalance]);
 
+  // Gửi Giao dịch Swap trực tiếp qua window.aptos để tránh bị chặn Custom Network
   const handleExecuteTrade = async () => {
     if (!connected || !account) {
-      alert("Please connect your Petra Wallet first!");
+      alert("Vui lòng kết nối Petra Wallet trước!");
+      return;
+    }
+
+    if (typeof window === "undefined" || !window.aptos) {
+      alert("Không tìm thấy Petra Wallet Extension!");
       return;
     }
 
     const amountToUse = parseFloat(payAmount || "0.001");
     if (!amountToUse || amountToUse <= 0) {
-      alert("Please enter a valid amount.");
+      alert("Vui lòng nhập số lượng hợp lệ.");
       return;
     }
 
     setIsProcessing(true);
-    setStatusMessage("Awaiting confirmation in Petra Wallet...");
+    setStatusMessage("Đang chờ xác nhận giao dịch trên Petra Wallet (Shelby Testnet)...");
     setIsError(false);
     setTxHash(null);
 
     try {
-      const { Aptos, AptosConfig, Network } = await import("@aptos-labs/ts-sdk");
-      const aptosConfig = new AptosConfig({
-        network: Network.TESTNET,
-        clientConfig: { API_KEY: apiKey },
-      });
-      const aptosClient = new Aptos(aptosConfig);
-
       const amountInOctas = Math.floor(amountToUse * 100_000_000);
 
-      const response = await signAndSubmitTransaction({
-        data: {
-          function: "0x1::aptos_account::transfer",
-          typeArguments: [],
-          functionArguments: [account.address.toString(), amountInOctas.toString()],
-        },
-      });
+      const payload = {
+        type: "entry_function_payload",
+        function: "0x1::aptos_account::transfer",
+        type_arguments: [],
+        arguments: [account.address.toString(), amountInOctas.toString()],
+      };
 
-      const hash = response?.hash;
+      // Tương tác trực tiếp với Ví Petra
+      const response = await window.aptos.signAndSubmitTransaction(payload);
+      const hash = response?.hash || response;
 
       if (hash) {
-        setTxHash(hash);
-        setStatusMessage("Swap Transaction Executed Successfully on Aptos Testnet!");
+        setTxHash(typeof hash === "string" ? hash : hash.hash);
+        setStatusMessage("Giao dịch Swap thành công trên Mạng Shelby Testnet!");
         setIsError(false);
-
-        await aptosClient.waitForTransaction({ transactionHash: hash });
         fetchBalance(account.address.toString());
       } else {
-        throw new Error("No transaction hash returned from wallet.");
+        throw new Error("Không nhận được Tx Hash từ ví.");
       }
     } catch (error: any) {
       console.error("Trade Error:", error);
       setIsError(true);
       const msg = error?.message || error?.toString() || "";
       if (msg.includes("rejected") || error?.code === 4001) {
-        setStatusMessage("Transaction Cancelled: User rejected request.");
+        setStatusMessage("Giao dịch bị hủy: Người dùng từ chối yêu cầu.");
       } else {
-        setStatusMessage(`Error: ${msg || "Transaction execution failed."}`);
+        setStatusMessage(`Lỗi Shelby Network: ${msg || "Giao dịch thất bại."}`);
       }
     } finally {
       setIsProcessing(false);
     }
   };
 
-  // Upload file chuẩn theo Shelby Browser SDK Documentation
+  // Upload Storage Blob lên Shelby Network
   const handleUploadStorage = async () => {
     if (!connected || !account) {
-      alert("Please connect your Petra Wallet first!");
+      alert("Vui lòng kết nối Petra Wallet!");
       return;
     }
 
     if (!selectedFile) {
-      alert("Please select a file to upload to Shelby Vault.");
+      alert("Vui lòng chọn file để tải lên Shelby Vault.");
+      return;
+    }
+
+    if (typeof window === "undefined" || !window.aptos) {
+      alert("Không tìm thấy Petra Wallet!");
       return;
     }
 
@@ -172,7 +184,7 @@ export default function MainApp() {
     setTxHash(null);
 
     try {
-      const { AccountAddress, Network, Aptos, AptosConfig } = await import("@aptos-labs/ts-sdk");
+      const { AccountAddress } = await import("@aptos-labs/ts-sdk");
       const {
         createDefaultErasureCodingProvider,
         generateCommitments,
@@ -181,26 +193,19 @@ export default function MainApp() {
         ShelbyClient,
       } = await import("@shelby-protocol/sdk/browser");
 
-      // Dùng Network.TESTNET chuẩn
-      const aptosConfig = new AptosConfig({
-        network: Network.TESTNET,
-        clientConfig: { API_KEY: apiKey },
-      });
-      const aptosClient = new Aptos(aptosConfig);
-
       const shelbyClient = new ShelbyClient({
-        network: Network.TESTNET,
+        rpcUrl: SHELBY_RPC,
         apiKey: apiKey,
       });
 
-      setStatusMessage("Step 1/3: Encoding file into commitments...");
+      setStatusMessage("Bước 1/3: Đang mã hóa file...");
       const arrayBuffer = await selectedFile.arrayBuffer();
       const fileData = new Uint8Array(arrayBuffer);
 
       const provider = await createDefaultErasureCodingProvider();
       const commitments = await generateCommitments(provider, fileData);
 
-      setStatusMessage("Step 2/3: Registering file metadata on-chain...");
+      setStatusMessage("Bước 2/3: Đăng ký Metadata lên Mạng Shelby...");
       const expirationMicros = (1000 * 60 * 60 * 24 * 30 + Date.now()) * 1000;
       const userAccountAddress = AccountAddress.from(account.address.toString());
 
@@ -213,28 +218,24 @@ export default function MainApp() {
         blobSize: commitments.raw_data_size,
       });
 
-      const response = await signAndSubmitTransaction({
-        data: rawPayload,
-      });
+      // Gọi window.aptos gửi Blob Payload
+      const response = await window.aptos.signAndSubmitTransaction(rawPayload);
+      const hash = response?.hash || response;
+      setTxHash(typeof hash === "string" ? hash : hash.hash);
 
-      const hash = response?.hash;
-      setTxHash(hash);
-
-      await aptosClient.waitForTransaction({ transactionHash: hash });
-
-      setStatusMessage("Step 3/3: Uploading file payload to Shelby RPC Storage...");
+      setStatusMessage("Bước 3/3: Tải dữ liệu Blob lên Shelby RPC Storage...");
       await shelbyClient.rpc.putBlob({
         account: userAccountAddress,
         blobName: selectedFile.name,
         blobData: fileData,
       });
 
-      setStatusMessage(`File "${selectedFile.name}" uploaded successfully to Shelby Network!`);
+      setStatusMessage(`File "${selectedFile.name}" đã tải thành công lên Shelby Storage!`);
       setIsError(false);
     } catch (error: any) {
       console.error("Storage Upload Error:", error);
       setIsError(true);
-      setStatusMessage(`Upload failed: ${error?.message || "Error processing file upload."}`);
+      setStatusMessage(`Upload thất bại: ${error?.message || "Lỗi xử lý lưu trữ."}`);
     } finally {
       setIsProcessing(false);
     }
@@ -249,7 +250,7 @@ export default function MainApp() {
           </div>
           <div>
             <span className="text-xl font-bold tracking-wider text-teal-400 block">SHELBY</span>
-            <span className="text-xs text-slate-500">Testnet Ecosystem</span>
+            <span className="text-xs text-slate-500">Shelby Testnet Ecosystem</span>
           </div>
         </div>
 
@@ -319,7 +320,7 @@ export default function MainApp() {
           <div className="w-full max-w-md p-6 rounded-3xl bg-slate-900 border border-slate-800 shadow-2xl">
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-xl font-bold text-white">Swap on Shelby</h2>
-              <span className="text-xs bg-teal-500/10 text-teal-400 border border-teal-500/30 px-2.5 py-1 rounded-lg">Testnet</span>
+              <span className="text-xs bg-teal-500/10 text-teal-400 border border-teal-500/30 px-2.5 py-1 rounded-lg">Shelby Testnet</span>
             </div>
 
             <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 mb-2">
@@ -366,7 +367,7 @@ export default function MainApp() {
               className="w-full bg-teal-500 py-4 rounded-2xl font-bold text-slate-950 hover:bg-teal-400 transition disabled:opacity-50 flex items-center justify-center gap-2"
             >
               {isProcessing && <RefreshCw className="h-4 w-4 animate-spin" />}
-              {isProcessing ? "Confirming on Petra..." : "Execute Testnet Swap"}
+              {isProcessing ? "Confirming on Petra Wallet..." : "Execute Testnet Swap"}
             </button>
           </div>
         )}
@@ -374,20 +375,20 @@ export default function MainApp() {
         {activeTab === "faucet" && (
           <div className="w-full max-w-md p-6 rounded-3xl bg-slate-900 border border-slate-800 text-center shadow-2xl">
             <Droplet className="h-12 w-12 text-teal-400 mx-auto mb-3" />
-            <h2 className="text-xl font-bold text-white mb-1">Aptos Testnet Faucet</h2>
-            <p className="text-xs text-slate-400 mb-6">Claim APT tokens for gas fee & join Shelby Discord for testnet ShelbyUSD.</p>
+            <h2 className="text-xl font-bold text-white mb-1">Shelby Testnet Faucet</h2>
+            <p className="text-xs text-slate-400 mb-6">Nhận token thử nghiệm để trải nghiệm mạng Shelby.</p>
             <div className="flex flex-col gap-3">
               <button
-                onClick={() => window.open("https://aptos.dev/network/faucet", "_blank")}
+                onClick={() => window.open("https://faucet.shelbynet.shelby.xyz", "_blank")}
                 className="w-full bg-teal-500 py-3.5 rounded-2xl font-bold text-slate-950 hover:bg-teal-400 transition"
               >
-                1. Get Testnet APT Faucet
+                1. Nhận Faucet Trực Tiếp
               </button>
               <button
                 onClick={() => window.open("https://discord.gg/shelbyprotocol", "_blank")}
                 className="w-full bg-slate-800 py-3.5 rounded-2xl font-bold text-teal-400 hover:bg-slate-700 transition"
               >
-                2. Request ShelbyUSD on Discord
+                2. Request ShelbyUSD qua Discord
               </button>
             </div>
           </div>
@@ -418,7 +419,7 @@ export default function MainApp() {
           <div className="w-full max-w-md p-6 rounded-3xl bg-slate-900 border border-slate-800 text-center">
             <Database className="h-12 w-12 text-teal-400 mx-auto mb-4" />
             <h2 className="text-xl font-bold text-white mb-2">Shelby Storage Vault</h2>
-            <p className="text-xs text-slate-400 mb-4">Upload blob files directly onto Shelby Storage Network.</p>
+            <p className="text-xs text-slate-400 mb-4">Tải tệp tin Blob trực tiếp lên Shelby Network Storage.</p>
             <div className="border-2 border-dashed border-slate-700 rounded-2xl p-6 mb-4 hover:border-teal-500 transition relative">
               <input
                 type="file"
@@ -427,7 +428,7 @@ export default function MainApp() {
               />
               <Upload className="h-8 w-8 text-slate-500 mx-auto mb-2" />
               <p className="text-xs text-slate-300 font-medium">
-                {selectedFile ? selectedFile.name : "Click or drag file here to select Blob"}
+                {selectedFile ? selectedFile.name : "Kéo thả hoặc chọn tệp Blob"}
               </p>
             </div>
             <button
@@ -436,7 +437,7 @@ export default function MainApp() {
               className="w-full bg-teal-500 py-3 rounded-xl font-bold text-slate-950 hover:bg-teal-400 transition text-sm flex items-center justify-center gap-2"
             >
               {isProcessing && <RefreshCw className="h-4 w-4 animate-spin" />}
-              {isProcessing ? "Uploading Blob..." : "Upload File to Shelby Network"}
+              {isProcessing ? "Uploading Blob..." : "Upload File lên Shelby Network"}
             </button>
           </div>
         )}
