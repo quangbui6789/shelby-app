@@ -78,7 +78,6 @@ export default function MainApp() {
     }
 
     try {
-      // "Petra" phải khớp tên ví trong danh sách wallets đã đăng ký với adapter
       const petraWallet = wallets?.find((w) => w.name === "Petra");
       await connect(petraWallet ? petraWallet.name : ("Petra" as WalletName));
       setStatusMessage("Connected via Petra Wallet!");
@@ -90,7 +89,6 @@ export default function MainApp() {
     }
   };
 
-  // Fetch balance mỗi khi account thay đổi (dùng useEffect thay vì useState để chạy lại đúng lúc)
   useEffect(() => {
     if (account?.address) {
       fetchBalance(account.address.toString());
@@ -126,7 +124,6 @@ export default function MainApp() {
       const amountInOctas = Math.floor(amountToUse * 100_000_000);
 
       const response = await signAndSubmitTransaction({
-        sender: account.address,
         data: {
           function: "0x1::aptos_account::transfer",
           typeArguments: [],
@@ -217,13 +214,10 @@ export default function MainApp() {
         blobSize: commitments.raw_data_size,
       });
 
+      // Theo đúng docs chính thức của Shelby: truyền thẳng payload vào "data",
+      // KHÔNG tự bóc tách function/typeArguments/functionArguments
       const response = await signAndSubmitTransaction({
-        sender: account.address,
-        data: {
-          function: rawPayload.function,
-          typeArguments: rawPayload.typeArguments || [],
-          functionArguments: rawPayload.functionArguments || [],
-        },
+        data: rawPayload,
       });
 
       const hash = response?.hash;
