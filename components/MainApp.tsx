@@ -31,7 +31,27 @@ export default function MainApp() {
   const wallets = walletContext?.wallets;
   const connect = walletContext?.connect;
   const disconnect = walletContext?.disconnect;
-  const signAndSubmitTransaction = walletContext?.signAndSubmitTransaction;
+
+  // Hàm Helper gửi Transaction bypass validation của Wallet Adapter
+  const submitCustomNetworkTx = async (payload: any) => {
+    if (typeof window !== "undefined" && (window as any).aptos) {
+      // Cách 1: Gọi trực tiếp Provider Petra (Hoạt động ổn định trên Shelby/Custom RPC)
+      return await (window as any).aptos.signAndSubmitTransaction(payload);
+    } 
+    
+    if (walletContext?.signAndSubmitTransaction) {
+      // Cách 2: Fallback nếu môi trường không có window.aptos
+      return await walletContext.signAndSubmitTransaction({
+        data: {
+          function: payload.function,
+          typeArguments: payload.type_arguments || payload.typeArguments || [],
+          functionArguments: payload.arguments || payload.functionArguments || [],
+        } as any,
+      } as any);
+    }
+
+    throw new Error("Không tìm thấy ví tương thích trên trình duyệt.");
+  };
 
   const fetchBalance = useCallback(async () => {
     if (!account?.address) return;
@@ -143,30 +163,15 @@ export default function MainApp() {
       const amountInOctas = Math.floor(amountToUse * 100_000_000);
       const senderAddress = account.address.toString();
 
-      let pendingTx: any;
+      // Cấu trúc payload tương thích trực tiếp với Petra Extension
+      const payload = {
+        type: "entry_function_payload",
+        function: "0x1::aptos_account::transfer",
+        type_arguments: [],
+        arguments: [senderAddress, amountInOctas.toString()],
+      };
 
-      // Ưu tiên gọi trực tiếp qua window.aptos để tránh lỗi Custom Network từ Adapter
-      if (typeof window !== "undefined" && (window as any).aptos) {
-        pendingTx = await (window as any).aptos.signAndSubmitTransaction({
-          payload: {
-            type: "entry_function_payload",
-            function: "0x1::aptos_account::transfer",
-            type_arguments: [],
-            arguments: [senderAddress, amountInOctas.toString()],
-          }
-        });
-      } else if (signAndSubmitTransaction) {
-        pendingTx = await signAndSubmitTransaction({
-          data: {
-            function: "0x1::aptos_account::transfer",
-            typeArguments: [],
-            functionArguments: [senderAddress, amountInOctas],
-          } as any,
-        } as any);
-      } else {
-        throw new Error("No wallet provider found.");
-      }
-
+      const pendingTx = await submitCustomNetworkTx(payload);
       const hash = pendingTx?.hash || pendingTx?.transactionHash;
 
       if (hash) {
@@ -241,7 +246,7 @@ export default function MainApp() {
       const expirationMicros = (1000 * 60 * 60 * 24 * 30 + Date.now()) * 1000;
       const userAccountAddress = AccountAddress.from(account.address.toString());
 
-      const payload = ShelbyBlobClient.createRegisterBlobPayload({
+      const rawPayload = ShelbyBlobClient.createRegisterBlobPayload({
         account: userAccountAddress,
         blobName: selectedFile.name,
         blobMerkleRoot: commitments.blob_merkle_root,
@@ -250,25 +255,14 @@ export default function MainApp() {
         blobSize: commitments.raw_data_size,
       });
 
-      let pendingTx: any;
+      const payload = {
+        type: "entry_function_payload",
+        function: rawPayload.function,
+        type_arguments: rawPayload.typeArguments || [],
+        arguments: rawPayload.functionArguments || [],
+      };
 
-      if (typeof window !== "undefined" && (window as any).aptos) {
-        pendingTx = await (window as any).aptos.signAndSubmitTransaction({
-          payload: {
-            type: "entry_function_payload",
-            function: payload.function,
-            type_arguments: payload.typeArguments || [],
-            arguments: payload.functionArguments || [],
-          }
-        });
-      } else if (signAndSubmitTransaction) {
-        pendingTx = await signAndSubmitTransaction({
-          data: payload as any,
-        } as any);
-      } else {
-        throw new Error("No wallet provider found.");
-      }
-
+      const pendingTx = await submitCustomNetworkTx(payload);
       const hash = pendingTx?.hash || pendingTx?.transactionHash;
       setTxHash(hash);
 
