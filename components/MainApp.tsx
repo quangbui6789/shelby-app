@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useCallback } from "react";
-import { useWallet } from "@aptos-labs/wallet-adapter-react";
+import { useState, useEffect, useCallback } from "react";
+import { useWallet, WalletName } from "@aptos-labs/wallet-adapter-react";
 import { 
   Wallet, Zap, ArrowLeftRight, Database, TrendingUp, 
   CheckCircle, Droplet, RefreshCw, AlertCircle, Coins, Upload 
@@ -80,7 +80,7 @@ export default function MainApp() {
     try {
       // "Petra" phải khớp tên ví trong danh sách wallets đã đăng ký với adapter
       const petraWallet = wallets?.find((w) => w.name === "Petra");
-      await connect(petraWallet ? petraWallet.name : "Petra");
+      await connect(petraWallet ? petraWallet.name : ("Petra" as WalletName));
       setStatusMessage("Connected via Petra Wallet!");
       setIsError(false);
     } catch (error: any) {
@@ -90,12 +90,12 @@ export default function MainApp() {
     }
   };
 
-  // Fetch balance mỗi khi account thay đổi
-  useState(() => {
+  // Fetch balance mỗi khi account thay đổi (dùng useEffect thay vì useState để chạy lại đúng lúc)
+  useEffect(() => {
     if (account?.address) {
       fetchBalance(account.address.toString());
     }
-  });
+  }, [account, fetchBalance]);
 
   const handleExecuteTrade = async () => {
     if (!connected || !account) {
@@ -125,7 +125,6 @@ export default function MainApp() {
 
       const amountInOctas = Math.floor(amountToUse * 100_000_000);
 
-      // Dùng signAndSubmitTransaction của adapter (chuẩn AIP-62), không gọi thẳng window.aptos
       const response = await signAndSubmitTransaction({
         sender: account.address,
         data: {
