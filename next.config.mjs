@@ -1,14 +1,11 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  // 1. Tắt check type strict khi build Vercel
   typescript: {
     ignoreBuildErrors: true,
   },
   eslint: {
     ignoreDuringBuilds: true,
   },
-
-  // 2. Cấu hình Webpack hỗ trợ WebAssembly & Node polyfills cho Web3 SDK
   webpack: (config, { isServer }) => {
     config.experiments = {
       ...config.experiments,
@@ -29,4 +26,4 @@ const nextConfig = {
   },
 };
 
-module.exports = nextConfig;
+export default nextConfig;
