@@ -8,7 +8,7 @@ export default function Providers({ children }: { children: React.ReactNode }) {
       autoConnect={false}
       dappConfig={
         {
-          network: "custom",
+          network: "custom" as any,
           fullnode: "https://api.shelbynet.shelby.xyz/v1",
           nodeUrl: "https://api.shelbynet.shelby.xyz/v1",
         } as any
