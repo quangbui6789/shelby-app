@@ -32,7 +32,7 @@ export default function MainApp() {
   const [isError, setIsError] = useState(false);
   const [txHash, setTxHash] = useState<string | null>(null);
 
-  // Fetch balance bằng REST API trực tiếp
+  // Fetch balance bằng REST API
   const fetchBalance = useCallback(async (addrStr: string) => {
     if (!addrStr) return;
     try {
@@ -64,34 +64,38 @@ export default function MainApp() {
     }
   }, []);
 
-  // Tự động kiểm tra nếu đã connect ví Petra trước đó khi F5 trang
+  // Kiểm tra tự động kết nối lại khi F5 trang
   useEffect(() => {
-    if (typeof window !== "undefined" && window.aptos) {
-      const checkConnection = async () => {
-        try {
-          if (typeof window.aptos.isConnected === "function" && await window.aptos.isConnected()) {
-            const acc = await window.aptos.account();
-            if (acc?.address) {
-              const addrStr = typeof acc.address === "string" ? acc.address : acc.address.toString();
-              setAccount(addrStr);
-              setConnected(true);
-              fetchBalance(addrStr);
+    if (typeof window !== "undefined") {
+      const wallet = window.aptos;
+      if (wallet) {
+        const checkConnection = async () => {
+          try {
+            if (typeof wallet.isConnected === "function" && await wallet.isConnected()) {
+              const acc = await wallet.account();
+              if (acc?.address) {
+                const addrStr = typeof acc.address === "string" ? acc.address : acc.address.toString();
+                setAccount(addrStr);
+                setConnected(true);
+                fetchBalance(addrStr);
+              }
             }
+          } catch (err) {
+            console.warn("Auto connect check failed:", err);
           }
-        } catch (err) {
-          console.warn("Auto connect check failed:", err);
-        }
-      };
-      checkConnection();
+        };
+        checkConnection();
+      }
     }
   }, [fetchBalance]);
 
-  // Connect / Disconnect chuẩn Aptos Wallet Standard
+  // Connect / Disconnect chuẩn Wallet Standard AIP-62
   const handleWalletAction = async () => {
     if (connected) {
       try {
-        if (typeof window !== "undefined" && window.aptos?.disconnect) {
-          await window.aptos.disconnect();
+        const wallet = typeof window !== "undefined" ? window.aptos : null;
+        if (wallet && typeof wallet.disconnect === "function") {
+          await wallet.disconnect();
         }
         setConnected(false);
         setAccount(null);
@@ -103,22 +107,28 @@ export default function MainApp() {
       return;
     }
 
-    if (typeof window === "undefined" || !window.aptos) {
-      alert("Vui lòng cài đặt ví Petra!");
+    if (typeof window === "undefined") return;
+
+    const wallet = window.aptos;
+
+    if (!wallet) {
+      alert("Vui lòng cài đặt Petra Wallet Extension!");
       return;
     }
 
     try {
       let response;
-      if (typeof window.aptos.connect === "function") {
-        response = await window.aptos.connect();
+      if (typeof wallet.connect === "function") {
+        response = await wallet.connect();
+      } else if (wallet.features?.["aptos:connect"]?.connect) {
+        response = await wallet.features["aptos:connect"].connect();
       } else {
-        throw new Error("Ví Petra không hỗ trợ kết nối.");
+        throw new Error("Không tìm thấy phương thức kết nối chuẩn trên Petra Wallet.");
       }
 
       let addr = response?.address;
-      if (!addr && typeof window.aptos.account === "function") {
-        const accInfo = await window.aptos.account();
+      if (!addr && typeof wallet.account === "function") {
+        const accInfo = await wallet.account();
         addr = accInfo?.address;
       }
 
@@ -130,7 +140,7 @@ export default function MainApp() {
         setIsError(false);
         fetchBalance(addrStr);
       } else {
-        throw new Error("Không thể lấy địa chỉ ví.");
+        throw new Error("Không lấy được địa chỉ ví.");
       }
     } catch (error: any) {
       console.error("Connection error:", error);
@@ -146,7 +156,8 @@ export default function MainApp() {
       return;
     }
 
-    if (typeof window === "undefined" || !window.aptos) {
+    const wallet = window.aptos;
+    if (!wallet) {
       alert("Không tìm thấy Petra Wallet Extension!");
       return;
     }
@@ -172,7 +183,7 @@ export default function MainApp() {
         arguments: [account, amountInOctas.toString()],
       };
 
-      const response = await window.aptos.signAndSubmitTransaction(payload);
+      const response = await wallet.signAndSubmitTransaction(payload);
       const hash = response?.hash || response;
 
       if (hash) {
@@ -211,7 +222,8 @@ export default function MainApp() {
       return;
     }
 
-    if (!window.aptos) {
+    const wallet = window.aptos;
+    if (!wallet) {
       alert("Không tìm thấy Petra Wallet!");
       return;
     }
@@ -250,7 +262,7 @@ export default function MainApp() {
         blobSize: commitments.raw_data_size,
       });
 
-      const response = await window.aptos.signAndSubmitTransaction(rawPayload);
+      const response = await wallet.signAndSubmitTransaction(rawPayload);
       const hash = response?.hash || response;
       setTxHash(typeof hash === "string" ? hash : hash.hash);
 
