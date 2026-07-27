@@ -2,23 +2,20 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { 
-  Wallet, Zap, ArrowLeftRight, Database, TrendingUp, 
+  Zap, ArrowLeftRight, Database, TrendingUp, 
   CheckCircle, Droplet, RefreshCw, AlertCircle, Coins, Upload 
 } from "lucide-react";
-
-declare global {
-  interface Window {
-    aptos?: any;
-  }
-}
+import { 
+  AptosWalletAdapterProvider, 
+  useWallet 
+} from "@aptos-labs/wallet-adapter-react";
+import { WalletConnector } from "@aptos-labs/wallet-adapter-mui-design";
 
 const SHELBY_RPC = "https://api.shelbynet.shelby.xyz/v1";
 const apiKey = process.env.NEXT_PUBLIC_SHELBY_API_KEY || "";
 
-export default function MainApp() {
-  const [account, setAccount] = useState<string | null>(null);
-  const [connected, setConnected] = useState(false);
-  const [standardWallet, setStandardWallet] = useState<any>(null);
+function AppContent() {
+  const { account, connected, signAndSubmitTransaction } = useWallet();
 
   const [activeTab, setActiveTab] = useState<"trade" | "faucet" | "staking" | "storage">("trade");
   const [payAmount, setPayAmount] = useState("0.001");
@@ -33,7 +30,9 @@ export default function MainApp() {
   const [isError, setIsError] = useState(false);
   const [txHash, setTxHash] = useState<string | null>(null);
 
-  // Fetch balance bằng REST API
+  const userAddress = account?.address ? account.address.toString() : null;
+
+  // Fetch balance
   const fetchBalance = useCallback(async (addrStr: string) => {
     if (!addrStr) return;
     try {
@@ -65,102 +64,16 @@ export default function MainApp() {
     }
   }, []);
 
-  // Lắng nghe Wallet Standard theo event AIP-62
   useEffect(() => {
-    if (typeof window === "undefined") return;
-
-    const handleRegister = (event: any) => {
-      const wallet = event.detail;
-      if (wallet && wallet.name?.toLowerCase().includes("petra")) {
-        setStandardWallet(wallet);
-      }
-    };
-
-    window.addEventListener("aptos:registerWallet", handleRegister);
-
-    // Phát event để thông báo DApp đã sẵn sàng nhận ví
-    window.dispatchEvent(new CustomEvent("aptos:registerWallet"));
-
-    return () => {
-      window.removeEventListener("aptos:registerWallet", handleRegister);
-    };
-  }, []);
-
-  // Connect / Disconnect theo chuẩn AIP-62 Feature API
-  const handleWalletAction = async () => {
-    if (connected) {
-      try {
-        if (standardWallet?.features?.["aptos:disconnect"]?.disconnect) {
-          await standardWallet.features["aptos:disconnect"].disconnect();
-        }
-      } catch (e) {
-        console.error(e);
-      }
-      setConnected(false);
-      setAccount(null);
-      setStatusMessage("Disconnected from wallet.");
-      setIsError(false);
-      return;
+    if (connected && userAddress) {
+      fetchBalance(userAddress);
     }
-
-    // Nếu chưa lấy được từ event listener, fallback lấy trực tiếp từ window.aptos
-    const targetWallet = standardWallet || (typeof window !== "undefined" ? window.aptos : null);
-
-    if (!targetWallet) {
-      alert("Không tìm thấy Petra Wallet Extension! Vui lòng cài đặt và bật extension.");
-      return;
-    }
-
-    try {
-      let response;
-
-      // 1. Thử dùng AIP-62 Standard Feature
-      if (targetWallet.features?.["aptos:connect"]?.connect) {
-        response = await targetWallet.features["aptos:connect"].connect();
-      } 
-      // 2. Thử dùng Standard Wallet Features
-      else if (targetWallet.features?.["standard:connect"]?.connect) {
-        response = await targetWallet.features["standard:connect"].connect();
-      }
-      // 3. Dự phòng gọi hàm connect trực tiếp
-      else if (typeof targetWallet.connect === "function") {
-        response = await targetWallet.connect();
-      } else {
-        throw new Error("Petra Wallet không hỗ trợ chuẩn kết nối AIP-62.");
-      }
-
-      let addr = response?.address || response?.args?.address;
-      if (!addr && targetWallet.accounts?.[0]?.address) {
-        addr = targetWallet.accounts[0].address;
-      }
-
-      if (addr) {
-        const addrStr = typeof addr === "string" ? addr : addr.toString();
-        setAccount(addrStr);
-        setConnected(true);
-        setStatusMessage("Connected to Shelbynet via Petra!");
-        setIsError(false);
-        fetchBalance(addrStr);
-      } else {
-        throw new Error("Không lấy được địa chỉ ví.");
-      }
-    } catch (error: any) {
-      console.error("Connection error:", error);
-      setStatusMessage(`Connection failed: ${error?.message || "User cancelled request"}`);
-      setIsError(true);
-    }
-  };
+  }, [connected, userAddress, fetchBalance]);
 
   // Gửi Giao dịch Swap
   const handleExecuteTrade = async () => {
-    if (!connected || !account) {
+    if (!connected || !userAddress) {
       alert("Vui lòng kết nối Petra Wallet trước!");
-      return;
-    }
-
-    const targetWallet = standardWallet || window.aptos;
-    if (!targetWallet) {
-      alert("Không tìm thấy Petra Wallet Extension!");
       return;
     }
 
@@ -171,36 +84,26 @@ export default function MainApp() {
     }
 
     setIsProcessing(true);
-    setStatusMessage("Đang chờ xác nhận giao dịch trên Petra Wallet (Shelbynet)...");
+    setStatusMessage("Đang chờ xác nhận giao dịch trên Petra Wallet...");
     setIsError(false);
     setTxHash(null);
 
     try {
       const amountInOctas = Math.floor(amountToUse * 100_000_000);
 
-      const payload = {
-        type: "entry_function_payload",
-        function: "0x1::aptos_account::transfer",
-        type_arguments: [],
-        arguments: [account, amountInOctas.toString()],
-      };
+      const response = await signAndSubmitTransaction({
+        data: {
+          function: "0x1::aptos_account::transfer",
+          typeArguments: [],
+          functionArguments: [userAddress, amountInOctas.toString()],
+        },
+      });
 
-      let response;
-      if (targetWallet.features?.["aptos:signAndSubmitTransaction"]?.signAndSubmitTransaction) {
-        response = await targetWallet.features["aptos:signAndSubmitTransaction"].signAndSubmitTransaction({ payload });
-      } else if (typeof targetWallet.signAndSubmitTransaction === "function") {
-        response = await targetWallet.signAndSubmitTransaction(payload);
-      } else {
-        throw new Error("Ví Petra không hỗ trợ ký giao dịch.");
-      }
-
-      const hash = response?.hash || response;
-
-      if (hash) {
-        setTxHash(typeof hash === "string" ? hash : hash.hash);
+      if (response?.hash) {
+        setTxHash(response.hash);
         setStatusMessage("Giao dịch Swap thành công trên Mạng Shelbynet!");
         setIsError(false);
-        fetchBalance(account);
+        fetchBalance(userAddress);
       } else {
         throw new Error("Không nhận được Tx Hash từ ví.");
       }
@@ -220,21 +123,13 @@ export default function MainApp() {
 
   // Upload Storage Blob
   const handleUploadStorage = async () => {
-    if (typeof window === "undefined") return;
-
-    if (!connected || !account) {
+    if (!connected || !userAddress) {
       alert("Vui lòng kết nối Petra Wallet!");
       return;
     }
 
     if (!selectedFile) {
       alert("Vui lòng chọn file để tải lên Shelby Vault.");
-      return;
-    }
-
-    const targetWallet = standardWallet || window.aptos;
-    if (!targetWallet) {
-      alert("Không tìm thấy Petra Wallet!");
       return;
     }
 
@@ -261,7 +156,7 @@ export default function MainApp() {
 
       setStatusMessage("Bước 2/3: Đăng ký Metadata lên Mạng Shelby...");
       const expirationMicros = (1000 * 60 * 60 * 24 * 30 + Date.now()) * 1000;
-      const userAccountAddress = aptosSdk.AccountAddress.from(account);
+      const userAccountAddress = aptosSdk.AccountAddress.from(userAddress);
 
       const rawPayload = shelbySdk.ShelbyBlobClient.createRegisterBlobPayload({
         account: userAccountAddress,
@@ -272,15 +167,15 @@ export default function MainApp() {
         blobSize: commitments.raw_data_size,
       });
 
-      let response;
-      if (targetWallet.features?.["aptos:signAndSubmitTransaction"]?.signAndSubmitTransaction) {
-        response = await targetWallet.features["aptos:signAndSubmitTransaction"].signAndSubmitTransaction({ payload: rawPayload });
-      } else {
-        response = await targetWallet.signAndSubmitTransaction(rawPayload);
-      }
+      const response = await signAndSubmitTransaction({
+        data: {
+          function: rawPayload.function as any,
+          typeArguments: rawPayload.type_arguments,
+          functionArguments: rawPayload.arguments,
+        },
+      });
 
-      const hash = response?.hash || response;
-      setTxHash(typeof hash === "string" ? hash : hash.hash);
+      setTxHash(response.hash);
 
       setStatusMessage("Bước 3/3: Tải dữ liệu Blob lên Shelby RPC Storage...");
       await shelbyClient.rpc.putBlob({
@@ -326,15 +221,8 @@ export default function MainApp() {
             </div>
           )}
 
-          <button
-            onClick={handleWalletAction}
-            className="flex items-center gap-2 rounded-xl bg-teal-500 px-5 py-2.5 font-semibold text-slate-950 transition hover:bg-teal-400"
-          >
-            <Wallet className="h-4 w-4" />
-            {connected && account
-              ? `${account.slice(0, 6)}...${account.slice(-4)}`
-              : "Connect Petra Wallet"}
-          </button>
+          {/* Nút Connect Wallet chuẩn Aptos Adapter */}
+          <WalletConnector />
         </div>
       </header>
 
@@ -506,5 +394,13 @@ export default function MainApp() {
         <p>© 2026 Shelby Protocol. All rights reserved.</p>
       </footer>
     </div>
+  );
+}
+
+export default function MainApp() {
+  return (
+    <AptosWalletAdapterProvider autoConnect={true}>
+      <AppContent />
+    </AptosWalletAdapterProvider>
   );
 }
