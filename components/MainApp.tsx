@@ -8,7 +8,6 @@ import {
 } from "lucide-react";
 
 const apiKey = process.env.NEXT_PUBLIC_SHELBY_API_KEY || "";
-const SHELBY_RPC = "https://rpc.shelbynet.shelby.xyz/v1";
 
 export default function MainApp() {
   const {
@@ -33,13 +32,13 @@ export default function MainApp() {
   const [isError, setIsError] = useState(false);
   const [txHash, setTxHash] = useState<string | null>(null);
 
+  // Lấy số dư sử dụng Aptos Testnet chuẩn
   const fetchBalance = useCallback(async (addrStr: string) => {
     if (!addrStr) return;
     try {
       const { Aptos, AptosConfig, Network } = await import("@aptos-labs/ts-sdk");
       const aptosConfig = new AptosConfig({
-        network: Network.CUSTOM,
-        fullnode: SHELBY_RPC,
+        network: Network.TESTNET,
         clientConfig: { API_KEY: apiKey },
       });
       const aptosClient = new Aptos(aptosConfig);
@@ -115,8 +114,7 @@ export default function MainApp() {
     try {
       const { Aptos, AptosConfig, Network } = await import("@aptos-labs/ts-sdk");
       const aptosConfig = new AptosConfig({
-        network: Network.CUSTOM,
-        fullnode: SHELBY_RPC,
+        network: Network.TESTNET,
         clientConfig: { API_KEY: apiKey },
       });
       const aptosClient = new Aptos(aptosConfig);
@@ -135,7 +133,7 @@ export default function MainApp() {
 
       if (hash) {
         setTxHash(hash);
-        setStatusMessage("Swap Transaction Executed Successfully on Shelbynet!");
+        setStatusMessage("Swap Transaction Executed Successfully on Aptos Testnet!");
         setIsError(false);
 
         await aptosClient.waitForTransaction({ transactionHash: hash });
@@ -157,6 +155,7 @@ export default function MainApp() {
     }
   };
 
+  // Upload file chuẩn theo Shelby Browser SDK Documentation
   const handleUploadStorage = async () => {
     if (!connected || !account) {
       alert("Please connect your Petra Wallet first!");
@@ -182,15 +181,15 @@ export default function MainApp() {
         ShelbyClient,
       } = await import("@shelby-protocol/sdk/browser");
 
+      // Dùng Network.TESTNET chuẩn
       const aptosConfig = new AptosConfig({
-        network: Network.CUSTOM,
-        fullnode: SHELBY_RPC,
+        network: Network.TESTNET,
         clientConfig: { API_KEY: apiKey },
       });
       const aptosClient = new Aptos(aptosConfig);
 
       const shelbyClient = new ShelbyClient({
-        network: Network.CUSTOM,
+        network: Network.TESTNET,
         apiKey: apiKey,
       });
 
@@ -214,8 +213,6 @@ export default function MainApp() {
         blobSize: commitments.raw_data_size,
       });
 
-      // Theo đúng docs chính thức của Shelby: truyền thẳng payload vào "data",
-      // KHÔNG tự bóc tách function/typeArguments/functionArguments
       const response = await signAndSubmitTransaction({
         data: rawPayload,
       });
@@ -232,7 +229,7 @@ export default function MainApp() {
         blobData: fileData,
       });
 
-      setStatusMessage(`File "${selectedFile.name}" uploaded successfully to Shelby Storage Network!`);
+      setStatusMessage(`File "${selectedFile.name}" uploaded successfully to Shelby Network!`);
       setIsError(false);
     } catch (error: any) {
       console.error("Storage Upload Error:", error);
@@ -252,7 +249,7 @@ export default function MainApp() {
           </div>
           <div>
             <span className="text-xl font-bold tracking-wider text-teal-400 block">SHELBY</span>
-            <span className="text-xs text-slate-500">Shelbynet Ecosystem</span>
+            <span className="text-xs text-slate-500">Testnet Ecosystem</span>
           </div>
         </div>
 
@@ -322,7 +319,7 @@ export default function MainApp() {
           <div className="w-full max-w-md p-6 rounded-3xl bg-slate-900 border border-slate-800 shadow-2xl">
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-xl font-bold text-white">Swap on Shelby</h2>
-              <span className="text-xs bg-teal-500/10 text-teal-400 border border-teal-500/30 px-2.5 py-1 rounded-lg">Shelbynet</span>
+              <span className="text-xs bg-teal-500/10 text-teal-400 border border-teal-500/30 px-2.5 py-1 rounded-lg">Testnet</span>
             </div>
 
             <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 mb-2">
@@ -377,14 +374,22 @@ export default function MainApp() {
         {activeTab === "faucet" && (
           <div className="w-full max-w-md p-6 rounded-3xl bg-slate-900 border border-slate-800 text-center shadow-2xl">
             <Droplet className="h-12 w-12 text-teal-400 mx-auto mb-3" />
-            <h2 className="text-xl font-bold text-white mb-1">Shelby Testnet Faucet</h2>
-            <p className="text-xs text-slate-400 mb-6">Claim testnet tokens directly to your Petra wallet.</p>
-            <button
-              onClick={() => window.open("https://faucet.shelbynet.shelby.xyz", "_blank")}
-              className="w-full bg-teal-500 py-4 rounded-2xl font-bold text-slate-950 hover:bg-teal-400 transition flex items-center justify-center gap-2"
-            >
-              Open Shelbynet Faucet
-            </button>
+            <h2 className="text-xl font-bold text-white mb-1">Aptos Testnet Faucet</h2>
+            <p className="text-xs text-slate-400 mb-6">Claim APT tokens for gas fee & join Shelby Discord for testnet ShelbyUSD.</p>
+            <div className="flex flex-col gap-3">
+              <button
+                onClick={() => window.open("https://aptos.dev/network/faucet", "_blank")}
+                className="w-full bg-teal-500 py-3.5 rounded-2xl font-bold text-slate-950 hover:bg-teal-400 transition"
+              >
+                1. Get Testnet APT Faucet
+              </button>
+              <button
+                onClick={() => window.open("https://discord.gg/shelbyprotocol", "_blank")}
+                className="w-full bg-slate-800 py-3.5 rounded-2xl font-bold text-teal-400 hover:bg-slate-700 transition"
+              >
+                2. Request ShelbyUSD on Discord
+              </button>
+            </div>
           </div>
         )}
 
