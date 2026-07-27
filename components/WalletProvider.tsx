@@ -8,13 +8,13 @@ export default function Providers({ children }: { children: React.ReactNode }) {
     <AptosWalletAdapterProvider
       autoConnect={false}
       dappConfig={{
-        network: Network.TESTNET,
-        aptosApiKeys: {
-          testnet: process.env.NEXT_PUBLIC_SHELBY_API_KEY,
-        },
+        network: Network.CUSTOM,
+        // Điền Endpoint RPC của Shelby Testnet
+        customNetworkUrl: "https://rpc.shelbynet.shelby.xyz/v1", 
       }}
       onError={(error) => {
-        console.log("Wallet connection error:", error);
+        // Bắt lỗi để không bị tràn màn hình đỏ ra UI
+        console.warn("Wallet Adapter Network Warning:", error);
       }}
     >
       {children}
