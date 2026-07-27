@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { useWallet } from "@aptos-labs/wallet-adapter-react";
 import { 
   Wallet, Zap, ArrowLeftRight, Database, TrendingUp, 
   CheckCircle, Droplet, RefreshCw, AlertCircle, Coins, Upload 
@@ -11,11 +10,12 @@ const apiKey = process.env.NEXT_PUBLIC_SHELBY_API_KEY || "";
 const SHELBY_RPC = "https://rpc.shelbynet.shelby.xyz/v1";
 
 export default function MainApp() {
-  const walletContext = useWallet();
-
   const [activeTab, setActiveTab] = useState<"trade" | "faucet" | "staking" | "storage">("trade");
   const [payAmount, setPayAmount] = useState("0.001");
   const [receiveAmount, setReceiveAmount] = useState("0.0015");
+
+  const [connected, setConnected] = useState(false);
+  const [accountAddress, setAccountAddress] = useState<string | null>(null);
 
   const [aptBalance, setAptBalance] = useState<string>("0");
   const [shelbyBalance, setShelbyBalance] = useState<string>("0");
@@ -26,35 +26,16 @@ export default function MainApp() {
   const [isError, setIsError] = useState(false);
   const [txHash, setTxHash] = useState<string | null>(null);
 
-  const account = walletContext?.account;
-  const connected = walletContext?.connected ?? false;
-  const wallets = walletContext?.wallets;
-  const connect = walletContext?.connect;
-  const disconnect = walletContext?.disconnect;
-
-  // Hàm Helper gửi Transaction bypass validation của Wallet Adapter
-  const submitCustomNetworkTx = async (payload: any) => {
-    if (typeof window !== "undefined" && (window as any).aptos) {
-      // Cách 1: Gọi trực tiếp Provider Petra (Hoạt động ổn định trên Shelby/Custom RPC)
-      return await (window as any).aptos.signAndSubmitTransaction(payload);
-    } 
-    
-    if (walletContext?.signAndSubmitTransaction) {
-      // Cách 2: Fallback nếu môi trường không có window.aptos
-      return await walletContext.signAndSubmitTransaction({
-        data: {
-          function: payload.function,
-          typeArguments: payload.type_arguments || payload.typeArguments || [],
-          functionArguments: payload.arguments || payload.functionArguments || [],
-        } as any,
-      } as any);
+  // Lấy Petra Provider trực tiếp từ window
+  const getPetraProvider = () => {
+    if (typeof window !== "undefined" && "aptos" in window) {
+      return (window as any).aptos;
     }
-
-    throw new Error("Không tìm thấy ví tương thích trên trình duyệt.");
+    return null;
   };
 
-  const fetchBalance = useCallback(async () => {
-    if (!account?.address) return;
+  const fetchBalance = useCallback(async (addrStr: string) => {
+    if (!addrStr) return;
     try {
       const { Aptos, AptosConfig, Network } = await import("@aptos-labs/ts-sdk");
       const aptosConfig = new AptosConfig({ 
@@ -64,7 +45,6 @@ export default function MainApp() {
       });
       const aptosClient = new Aptos(aptosConfig);
 
-      const addrStr = account.address.toString();
       const aptAmount = await aptosClient.getAccountAPTAmount({ accountAddress: addrStr });
       setAptBalance((aptAmount / 100_000_000).toLocaleString());
 
@@ -84,48 +64,60 @@ export default function MainApp() {
       setAptBalance("20");
       setShelbyBalance("0.2000");
     }
-  }, [account]);
+  }, []);
 
+  // Kiểm tra nếu đã kết nối Petra trước đó
   useEffect(() => {
-    if (connected && account) {
-      fetchBalance();
-    } else {
-      setAptBalance("0");
-      setShelbyBalance("0");
-    }
-  }, [connected, account, fetchBalance]);
-
-  if (!walletContext) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-950 text-teal-400 font-mono text-sm">
-        Initializing Wallet Context...
-      </div>
-    );
-  }
+    const checkConnection = async () => {
+      const petra = getPetraProvider();
+      if (petra) {
+        try {
+          const isConn = await petra.isConnected();
+          if (isConn) {
+            const acc = await petra.account();
+            if (acc?.address) {
+              setAccountAddress(acc.address);
+              setConnected(true);
+              fetchBalance(acc.address);
+            }
+          }
+        } catch (e) {
+          console.error("Check conn error:", e);
+        }
+      }
+    };
+    checkConnection();
+  }, [fetchBalance]);
 
   const handleWalletAction = async () => {
-    if (connected && disconnect) {
-      await disconnect();
+    const petra = getPetraProvider();
+    if (!petra) {
+      alert("Vui lòng cài đặt Extension Petra Wallet trên trình duyệt!");
+      return;
+    }
+
+    if (connected) {
+      try {
+        await petra.disconnect();
+      } catch (e) {}
+      setConnected(false);
+      setAccountAddress(null);
+      setAptBalance("0");
+      setShelbyBalance("0");
       setStatusMessage("Disconnected from wallet.");
       setIsError(false);
       return;
     }
 
-    if (!connect) return;
-
     try {
-      const petraWallet = wallets?.find((w) => w.name.toLowerCase().includes("petra"));
-
-      if (petraWallet) {
-        await connect(petraWallet.name);
+      const response = await petra.connect();
+      const addr = response?.address || (await petra.account())?.address;
+      if (addr) {
+        setAccountAddress(addr);
+        setConnected(true);
         setStatusMessage("Connected via Petra Wallet!");
         setIsError(false);
-      } else if (wallets && wallets.length > 0) {
-        await connect(wallets[0].name);
-        setStatusMessage(`Connected via ${wallets[0].name}!`);
-        setIsError(false);
-      } else {
-        alert("Vui lòng kiểm tra lại Extension Petra trên trình duyệt!");
+        fetchBalance(addr);
       }
     } catch (error: any) {
       console.error("Connection error:", error);
@@ -135,7 +127,8 @@ export default function MainApp() {
   };
 
   const handleExecuteTrade = async () => {
-    if (!connected || !account?.address) {
+    const petra = getPetraProvider();
+    if (!connected || !accountAddress || !petra) {
       alert("Please connect your Petra Wallet first!");
       return;
     }
@@ -161,17 +154,17 @@ export default function MainApp() {
       const aptosClient = new Aptos(aptosConfig);
 
       const amountInOctas = Math.floor(amountToUse * 100_000_000);
-      const senderAddress = account.address.toString();
 
-      // Cấu trúc payload tương thích trực tiếp với Petra Extension
-      const payload = {
-        type: "entry_function_payload",
-        function: "0x1::aptos_account::transfer",
-        type_arguments: [],
-        arguments: [senderAddress, amountInOctas.toString()],
-      };
+      // Gửi giao dịch trực tiếp bằng Petra window SDK
+      const pendingTx = await petra.signAndSubmitTransaction({
+        payload: {
+          type: "entry_function_payload",
+          function: "0x1::aptos_account::transfer",
+          type_arguments: [],
+          arguments: [accountAddress, amountInOctas.toString()],
+        }
+      });
 
-      const pendingTx = await submitCustomNetworkTx(payload);
       const hash = pendingTx?.hash || pendingTx?.transactionHash;
 
       if (hash) {
@@ -180,7 +173,7 @@ export default function MainApp() {
         setIsError(false);
 
         await aptosClient.waitForTransaction({ transactionHash: hash });
-        fetchBalance();
+        fetchBalance(accountAddress);
       } else {
         throw new Error("No transaction hash returned from wallet.");
       }
@@ -199,7 +192,8 @@ export default function MainApp() {
   };
 
   const handleUploadStorage = async () => {
-    if (!connected || !account?.address) {
+    const petra = getPetraProvider();
+    if (!connected || !accountAddress || !petra) {
       alert("Please connect your Petra Wallet first!");
       return;
     }
@@ -244,7 +238,7 @@ export default function MainApp() {
 
       setStatusMessage("Step 2/3: Registering file metadata on-chain...");
       const expirationMicros = (1000 * 60 * 60 * 24 * 30 + Date.now()) * 1000;
-      const userAccountAddress = AccountAddress.from(account.address.toString());
+      const userAccountAddress = AccountAddress.from(accountAddress);
 
       const rawPayload = ShelbyBlobClient.createRegisterBlobPayload({
         account: userAccountAddress,
@@ -255,14 +249,15 @@ export default function MainApp() {
         blobSize: commitments.raw_data_size,
       });
 
-      const payload = {
-        type: "entry_function_payload",
-        function: rawPayload.function,
-        type_arguments: rawPayload.typeArguments || [],
-        arguments: rawPayload.functionArguments || [],
-      };
+      const pendingTx = await petra.signAndSubmitTransaction({
+        payload: {
+          type: "entry_function_payload",
+          function: rawPayload.function,
+          type_arguments: rawPayload.typeArguments || [],
+          arguments: rawPayload.functionArguments || [],
+        }
+      });
 
-      const pendingTx = await submitCustomNetworkTx(payload);
       const hash = pendingTx?.hash || pendingTx?.transactionHash;
       setTxHash(hash);
 
@@ -285,8 +280,6 @@ export default function MainApp() {
       setIsProcessing(false);
     }
   };
-
-  const accountAddrStr = account?.address ? account.address.toString() : "";
 
   return (
     <div className="flex min-h-screen flex-col justify-between p-4 md:p-10 max-w-7xl mx-auto text-white">
@@ -319,8 +312,8 @@ export default function MainApp() {
             className="flex items-center gap-2 rounded-xl bg-teal-500 px-5 py-2.5 font-semibold text-slate-950 transition hover:bg-teal-400"
           >
             <Wallet className="h-4 w-4" />
-            {connected && accountAddrStr
-              ? `${accountAddrStr.slice(0, 6)}...${accountAddrStr.slice(-4)}`
+            {connected && accountAddress
+              ? `${accountAddress.slice(0, 6)}...${accountAddress.slice(-4)}`
               : "Connect Petra Wallet"}
           </button>
         </div>
