@@ -1,23 +1,9 @@
 "use client";
 
-import { AptosWalletAdapterProvider } from "@aptos-labs/wallet-adapter-react";
+import React from "react";
 
 export default function Providers({ children }: { children: React.ReactNode }) {
-  return (
-    <AptosWalletAdapterProvider
-      autoConnect={false}
-      dappConfig={
-        {
-          network: "custom" as any,
-          fullnode: "https://api.shelbynet.shelby.xyz/v1",
-          nodeUrl: "https://api.shelbynet.shelby.xyz/v1",
-        } as any
-      }
-      onError={(error) => {
-        console.warn("Wallet status:", error);
-      }}
-    >
-      {children}
-    </AptosWalletAdapterProvider>
-  );
+  // Trả về trực tiếp children để bỏ qua hoàn toàn Aptos Wallet Adapter,
+  // tránh việc SDK tự kiểm tra enum Network làm sập ứng dụng.
+  return <>{children}</>;
 }
