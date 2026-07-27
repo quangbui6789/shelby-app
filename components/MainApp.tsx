@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useCallback } from "react";
+import { useWallet } from "@aptos-labs/wallet-adapter-react";
 import { 
   Wallet, Zap, ArrowLeftRight, Database, TrendingUp, 
   CheckCircle, Droplet, RefreshCw, AlertCircle, Coins, Upload 
@@ -10,12 +11,18 @@ const apiKey = process.env.NEXT_PUBLIC_SHELBY_API_KEY || "";
 const SHELBY_RPC = "https://rpc.shelbynet.shelby.xyz/v1";
 
 export default function MainApp() {
+  const {
+    connect,
+    disconnect,
+    account,
+    connected,
+    signAndSubmitTransaction,
+    wallets,
+  } = useWallet();
+
   const [activeTab, setActiveTab] = useState<"trade" | "faucet" | "staking" | "storage">("trade");
   const [payAmount, setPayAmount] = useState("0.001");
   const [receiveAmount, setReceiveAmount] = useState("0.0015");
-
-  const [connected, setConnected] = useState(false);
-  const [accountAddress, setAccountAddress] = useState<string | null>(null);
 
   const [aptBalance, setAptBalance] = useState<string>("0");
   const [shelbyBalance, setShelbyBalance] = useState<string>("0");
@@ -26,22 +33,14 @@ export default function MainApp() {
   const [isError, setIsError] = useState(false);
   const [txHash, setTxHash] = useState<string | null>(null);
 
-  // Lấy Petra Provider trực tiếp từ window
-  const getPetraProvider = () => {
-    if (typeof window !== "undefined" && "aptos" in window) {
-      return (window as any).aptos;
-    }
-    return null;
-  };
-
   const fetchBalance = useCallback(async (addrStr: string) => {
     if (!addrStr) return;
     try {
       const { Aptos, AptosConfig, Network } = await import("@aptos-labs/ts-sdk");
-      const aptosConfig = new AptosConfig({ 
+      const aptosConfig = new AptosConfig({
         network: Network.CUSTOM,
         fullnode: SHELBY_RPC,
-        clientConfig: { API_KEY: apiKey }
+        clientConfig: { API_KEY: apiKey },
       });
       const aptosClient = new Aptos(aptosConfig);
 
@@ -49,7 +48,7 @@ export default function MainApp() {
       setAptBalance((aptAmount / 100_000_000).toLocaleString());
 
       const resources = await aptosClient.getAccountResources({ accountAddress: addrStr });
-      const shelbyResource = resources.find((r: any) => 
+      const shelbyResource = resources.find((r: any) =>
         r.type.includes("coin::CoinStore") && r.type.toLowerCase().includes("shelby")
       );
 
@@ -66,59 +65,24 @@ export default function MainApp() {
     }
   }, []);
 
-  // Kiểm tra nếu đã kết nối Petra trước đó
-  useEffect(() => {
-    const checkConnection = async () => {
-      const petra = getPetraProvider();
-      if (petra) {
-        try {
-          const isConn = await petra.isConnected();
-          if (isConn) {
-            const acc = await petra.account();
-            if (acc?.address) {
-              setAccountAddress(acc.address);
-              setConnected(true);
-              fetchBalance(acc.address);
-            }
-          }
-        } catch (e) {
-          console.error("Check conn error:", e);
-        }
-      }
-    };
-    checkConnection();
-  }, [fetchBalance]);
-
   const handleWalletAction = async () => {
-    const petra = getPetraProvider();
-    if (!petra) {
-      alert("Vui lòng cài đặt Extension Petra Wallet trên trình duyệt!");
-      return;
-    }
-
     if (connected) {
       try {
-        await petra.disconnect();
-      } catch (e) {}
-      setConnected(false);
-      setAccountAddress(null);
-      setAptBalance("0");
-      setShelbyBalance("0");
-      setStatusMessage("Disconnected from wallet.");
-      setIsError(false);
+        await disconnect();
+        setStatusMessage("Disconnected from wallet.");
+        setIsError(false);
+      } catch (e) {
+        console.error(e);
+      }
       return;
     }
 
     try {
-      const response = await petra.connect();
-      const addr = response?.address || (await petra.account())?.address;
-      if (addr) {
-        setAccountAddress(addr);
-        setConnected(true);
-        setStatusMessage("Connected via Petra Wallet!");
-        setIsError(false);
-        fetchBalance(addr);
-      }
+      // "Petra" phải khớp tên ví trong danh sách wallets đã đăng ký với adapter
+      const petraWallet = wallets?.find((w) => w.name === "Petra");
+      await connect(petraWallet ? petraWallet.name : "Petra");
+      setStatusMessage("Connected via Petra Wallet!");
+      setIsError(false);
     } catch (error: any) {
       console.error("Connection error:", error);
       setStatusMessage(`Connection failed: ${error?.message || "User cancelled request"}`);
@@ -126,9 +90,15 @@ export default function MainApp() {
     }
   };
 
+  // Fetch balance mỗi khi account thay đổi
+  useState(() => {
+    if (account?.address) {
+      fetchBalance(account.address.toString());
+    }
+  });
+
   const handleExecuteTrade = async () => {
-    const petra = getPetraProvider();
-    if (!connected || !accountAddress || !petra) {
+    if (!connected || !account) {
       alert("Please connect your Petra Wallet first!");
       return;
     }
@@ -146,26 +116,26 @@ export default function MainApp() {
 
     try {
       const { Aptos, AptosConfig, Network } = await import("@aptos-labs/ts-sdk");
-      const aptosConfig = new AptosConfig({ 
+      const aptosConfig = new AptosConfig({
         network: Network.CUSTOM,
         fullnode: SHELBY_RPC,
-        clientConfig: { API_KEY: apiKey }
+        clientConfig: { API_KEY: apiKey },
       });
       const aptosClient = new Aptos(aptosConfig);
 
       const amountInOctas = Math.floor(amountToUse * 100_000_000);
 
-      // Gửi giao dịch trực tiếp bằng Petra window SDK
-      const pendingTx = await petra.signAndSubmitTransaction({
-        payload: {
-          type: "entry_function_payload",
+      // Dùng signAndSubmitTransaction của adapter (chuẩn AIP-62), không gọi thẳng window.aptos
+      const response = await signAndSubmitTransaction({
+        sender: account.address,
+        data: {
           function: "0x1::aptos_account::transfer",
-          type_arguments: [],
-          arguments: [accountAddress, amountInOctas.toString()],
-        }
+          typeArguments: [],
+          functionArguments: [account.address.toString(), amountInOctas.toString()],
+        },
       });
 
-      const hash = pendingTx?.hash || pendingTx?.transactionHash;
+      const hash = response?.hash;
 
       if (hash) {
         setTxHash(hash);
@@ -173,7 +143,7 @@ export default function MainApp() {
         setIsError(false);
 
         await aptosClient.waitForTransaction({ transactionHash: hash });
-        fetchBalance(accountAddress);
+        fetchBalance(account.address.toString());
       } else {
         throw new Error("No transaction hash returned from wallet.");
       }
@@ -192,8 +162,7 @@ export default function MainApp() {
   };
 
   const handleUploadStorage = async () => {
-    const petra = getPetraProvider();
-    if (!connected || !accountAddress || !petra) {
+    if (!connected || !account) {
       alert("Please connect your Petra Wallet first!");
       return;
     }
@@ -217,10 +186,10 @@ export default function MainApp() {
         ShelbyClient,
       } = await import("@shelby-protocol/sdk/browser");
 
-      const aptosConfig = new AptosConfig({ 
+      const aptosConfig = new AptosConfig({
         network: Network.CUSTOM,
         fullnode: SHELBY_RPC,
-        clientConfig: { API_KEY: apiKey }
+        clientConfig: { API_KEY: apiKey },
       });
       const aptosClient = new Aptos(aptosConfig);
 
@@ -238,7 +207,7 @@ export default function MainApp() {
 
       setStatusMessage("Step 2/3: Registering file metadata on-chain...");
       const expirationMicros = (1000 * 60 * 60 * 24 * 30 + Date.now()) * 1000;
-      const userAccountAddress = AccountAddress.from(accountAddress);
+      const userAccountAddress = AccountAddress.from(account.address.toString());
 
       const rawPayload = ShelbyBlobClient.createRegisterBlobPayload({
         account: userAccountAddress,
@@ -249,16 +218,16 @@ export default function MainApp() {
         blobSize: commitments.raw_data_size,
       });
 
-      const pendingTx = await petra.signAndSubmitTransaction({
-        payload: {
-          type: "entry_function_payload",
+      const response = await signAndSubmitTransaction({
+        sender: account.address,
+        data: {
           function: rawPayload.function,
-          type_arguments: rawPayload.typeArguments || [],
-          arguments: rawPayload.functionArguments || [],
-        }
+          typeArguments: rawPayload.typeArguments || [],
+          functionArguments: rawPayload.functionArguments || [],
+        },
       });
 
-      const hash = pendingTx?.hash || pendingTx?.transactionHash;
+      const hash = response?.hash;
       setTxHash(hash);
 
       await aptosClient.waitForTransaction({ transactionHash: hash });
@@ -312,8 +281,8 @@ export default function MainApp() {
             className="flex items-center gap-2 rounded-xl bg-teal-500 px-5 py-2.5 font-semibold text-slate-950 transition hover:bg-teal-400"
           >
             <Wallet className="h-4 w-4" />
-            {connected && accountAddress
-              ? `${accountAddress.slice(0, 6)}...${accountAddress.slice(-4)}`
+            {connected && account
+              ? `${account.address.toString().slice(0, 6)}...${account.address.toString().slice(-4)}`
               : "Connect Petra Wallet"}
           </button>
         </div>
@@ -342,39 +311,16 @@ export default function MainApp() {
 
       <main className="my-8 flex flex-col items-center">
         <div className="flex flex-wrap justify-center bg-slate-900 border border-slate-800 p-1.5 rounded-2xl mb-8 gap-1">
-          <button
-            onClick={() => setActiveTab("trade")}
-            className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-medium text-sm transition ${
-              activeTab === "trade" ? "bg-teal-500 text-slate-950 font-bold" : "text-slate-400 hover:text-white"
-            }`}
-          >
+          <button onClick={() => setActiveTab("trade")} className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-medium text-sm transition ${activeTab === "trade" ? "bg-teal-500 text-slate-950 font-bold" : "text-slate-400 hover:text-white"}`}>
             <ArrowLeftRight className="h-4 w-4" /> Trade / Swap
           </button>
-
-          <button
-            onClick={() => setActiveTab("faucet")}
-            className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-medium text-sm transition ${
-              activeTab === "faucet" ? "bg-teal-500 text-slate-950 font-bold" : "text-slate-400 hover:text-white"
-            }`}
-          >
+          <button onClick={() => setActiveTab("faucet")} className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-medium text-sm transition ${activeTab === "faucet" ? "bg-teal-500 text-slate-950 font-bold" : "text-slate-400 hover:text-white"}`}>
             <Droplet className="h-4 w-4" /> Faucet
           </button>
-
-          <button
-            onClick={() => setActiveTab("staking")}
-            className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-medium text-sm transition ${
-              activeTab === "staking" ? "bg-teal-500 text-slate-950 font-bold" : "text-slate-400 hover:text-white"
-            }`}
-          >
+          <button onClick={() => setActiveTab("staking")} className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-medium text-sm transition ${activeTab === "staking" ? "bg-teal-500 text-slate-950 font-bold" : "text-slate-400 hover:text-white"}`}>
             <TrendingUp className="h-4 w-4" /> Staking
           </button>
-
-          <button
-            onClick={() => setActiveTab("storage")}
-            className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-medium text-sm transition ${
-              activeTab === "storage" ? "bg-teal-500 text-slate-950 font-bold" : "text-slate-400 hover:text-white"
-            }`}
-          >
+          <button onClick={() => setActiveTab("storage")} className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-medium text-sm transition ${activeTab === "storage" ? "bg-teal-500 text-slate-950 font-bold" : "text-slate-400 hover:text-white"}`}>
             <Database className="h-4 w-4" /> Storage Vault
           </button>
         </div>
@@ -440,7 +386,6 @@ export default function MainApp() {
             <Droplet className="h-12 w-12 text-teal-400 mx-auto mb-3" />
             <h2 className="text-xl font-bold text-white mb-1">Shelby Testnet Faucet</h2>
             <p className="text-xs text-slate-400 mb-6">Claim testnet tokens directly to your Petra wallet.</p>
-
             <button
               onClick={() => window.open("https://faucet.shelbynet.shelby.xyz", "_blank")}
               className="w-full bg-teal-500 py-4 rounded-2xl font-bold text-slate-950 hover:bg-teal-400 transition flex items-center justify-center gap-2"
@@ -456,24 +401,15 @@ export default function MainApp() {
               <span className="text-xs text-teal-400 font-semibold tracking-wider uppercase">Pool 1</span>
               <h3 className="text-xl font-bold text-white mt-1">Shelby Staking</h3>
               <p className="text-3xl font-extrabold text-teal-400 my-4">12.4% <span className="text-sm text-slate-400 font-normal">APY</span></p>
-              <button 
-                onClick={handleExecuteTrade}
-                disabled={isProcessing}
-                className="w-full bg-slate-800 hover:bg-teal-500 hover:text-slate-950 py-3 rounded-xl text-sm font-bold transition"
-              >
+              <button onClick={handleExecuteTrade} disabled={isProcessing} className="w-full bg-slate-800 hover:bg-teal-500 hover:text-slate-950 py-3 rounded-xl text-sm font-bold transition">
                 Stake ShelbyUSD
               </button>
             </div>
-
             <div className="p-6 rounded-3xl bg-slate-900 border border-slate-800">
               <span className="text-xs text-teal-400 font-semibold tracking-wider uppercase">Pool 2</span>
               <h3 className="text-xl font-bold text-white mt-1">Shelby Liquidity Pool</h3>
               <p className="text-3xl font-extrabold text-teal-400 my-4">24.8% <span className="text-sm text-slate-400 font-normal">APY</span></p>
-              <button 
-                onClick={handleExecuteTrade}
-                disabled={isProcessing}
-                className="w-full bg-slate-800 hover:bg-teal-500 hover:text-slate-950 py-3 rounded-xl text-sm font-bold transition"
-              >
+              <button onClick={handleExecuteTrade} disabled={isProcessing} className="w-full bg-slate-800 hover:bg-teal-500 hover:text-slate-950 py-3 rounded-xl text-sm font-bold transition">
                 Deposit Liquidity
               </button>
             </div>
@@ -485,10 +421,9 @@ export default function MainApp() {
             <Database className="h-12 w-12 text-teal-400 mx-auto mb-4" />
             <h2 className="text-xl font-bold text-white mb-2">Shelby Storage Vault</h2>
             <p className="text-xs text-slate-400 mb-4">Upload blob files directly onto Shelby Storage Network.</p>
-
             <div className="border-2 border-dashed border-slate-700 rounded-2xl p-6 mb-4 hover:border-teal-500 transition relative">
-              <input 
-                type="file" 
+              <input
+                type="file"
                 onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
                 className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
               />
@@ -497,8 +432,7 @@ export default function MainApp() {
                 {selectedFile ? selectedFile.name : "Click or drag file here to select Blob"}
               </p>
             </div>
-
-            <button 
+            <button
               onClick={handleUploadStorage}
               disabled={isProcessing}
               className="w-full bg-teal-500 py-3 rounded-xl font-bold text-slate-950 hover:bg-teal-400 transition text-sm flex items-center justify-center gap-2"
