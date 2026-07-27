@@ -64,28 +64,35 @@ export default function MainApp() {
     }
   }, []);
 
-  // Tự động kiểm tra nếu đã connect ví trước đó
+  // Tự động kiểm tra nếu đã connect ví Petra trước đó khi F5 trang
   useEffect(() => {
     if (typeof window !== "undefined" && window.aptos) {
-      window.aptos.isConnected().then((isConn: boolean) => {
-        if (isConn) {
-          window.aptos.account().then((acc: any) => {
+      const checkConnection = async () => {
+        try {
+          if (typeof window.aptos.isConnected === "function" && await window.aptos.isConnected()) {
+            const acc = await window.aptos.account();
             if (acc?.address) {
-              setAccount(acc.address);
+              const addrStr = typeof acc.address === "string" ? acc.address : acc.address.toString();
+              setAccount(addrStr);
               setConnected(true);
-              fetchBalance(acc.address);
+              fetchBalance(addrStr);
             }
-          });
+          }
+        } catch (err) {
+          console.warn("Auto connect check failed:", err);
         }
-      });
+      };
+      checkConnection();
     }
   }, [fetchBalance]);
 
-  // Xử lý Connect / Disconnect trực tiếp qua window.aptos
+  // Connect / Disconnect chuẩn Aptos Wallet Standard
   const handleWalletAction = async () => {
     if (connected) {
       try {
-        if (window.aptos?.disconnect) await window.aptos.disconnect();
+        if (typeof window !== "undefined" && window.aptos?.disconnect) {
+          await window.aptos.disconnect();
+        }
         setConnected(false);
         setAccount(null);
         setStatusMessage("Disconnected from wallet.");
@@ -102,14 +109,28 @@ export default function MainApp() {
     }
 
     try {
-      const response = await window.aptos.connect();
-      const addr = response?.address || (await window.aptos.account())?.address;
+      let response;
+      if (typeof window.aptos.connect === "function") {
+        response = await window.aptos.connect();
+      } else {
+        throw new Error("Ví Petra không hỗ trợ kết nối.");
+      }
+
+      let addr = response?.address;
+      if (!addr && typeof window.aptos.account === "function") {
+        const accInfo = await window.aptos.account();
+        addr = accInfo?.address;
+      }
+
       if (addr) {
-        setAccount(addr);
+        const addrStr = typeof addr === "string" ? addr : addr.toString();
+        setAccount(addrStr);
         setConnected(true);
         setStatusMessage("Connected to Shelbynet via Petra!");
         setIsError(false);
-        fetchBalance(addr);
+        fetchBalance(addrStr);
+      } else {
+        throw new Error("Không thể lấy địa chỉ ví.");
       }
     } catch (error: any) {
       console.error("Connection error:", error);
