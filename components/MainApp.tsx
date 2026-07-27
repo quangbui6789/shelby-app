@@ -33,34 +33,35 @@ export default function MainApp() {
   const [isError, setIsError] = useState(false);
   const [txHash, setTxHash] = useState<string | null>(null);
 
-  // Lấy số dư trực tiếp từ Shelby RPC
+  // Lấy số dư trực tiếp qua REST API (Tránh lỗi "Network not supported" từ SDK)
   const fetchBalance = useCallback(async (addrStr: string) => {
     if (!addrStr) return;
     try {
-      const { Aptos, AptosConfig, Network } = await import("@aptos-labs/ts-sdk");
-      const aptosConfig = new AptosConfig({
-        network: Network.CUSTOM,
-        fullnode: SHELBY_RPC,
-        clientConfig: { API_KEY: apiKey },
-      });
-      const aptosClient = new Aptos(aptosConfig);
+      // 1. Lấy APT Balance
+      const resApt = await fetch(`${SHELBY_RPC}/accounts/${addrStr}/resource/0x1::coin::CoinStore<0x1::aptos_coin::AptosCoin>`);
+      if (resApt.ok) {
+        const dataApt = await resApt.json();
+        const val = dataApt?.data?.coin?.value || "0";
+        setAptBalance((Number(val) / 100_000_000).toLocaleString());
+      }
 
-      const aptAmount = await aptosClient.getAccountAPTAmount({ accountAddress: addrStr });
-      setAptBalance((aptAmount / 100_000_000).toLocaleString());
+      // 2. Lấy danh sách Resources để tìm Shelby Token
+      const resResources = await fetch(`${SHELBY_RPC}/accounts/${addrStr}/resources`);
+      if (resResources.ok) {
+        const resources = await resResources.json();
+        const shelbyResource = resources.find((r: any) =>
+          r.type.includes("coin::CoinStore") && r.type.toLowerCase().includes("shelby")
+        );
 
-      const resources = await aptosClient.getAccountResources({ accountAddress: addrStr });
-      const shelbyResource = resources.find((r: any) =>
-        r.type.includes("coin::CoinStore") && r.type.toLowerCase().includes("shelby")
-      );
-
-      if (shelbyResource) {
-        const val = (shelbyResource.data as any)?.coin?.value || "0";
-        setShelbyBalance((Number(val) / 100_000_000).toFixed(4));
-      } else {
-        setShelbyBalance("0.2000");
+        if (shelbyResource) {
+          const val = (shelbyResource.data as any)?.coin?.value || "0";
+          setShelbyBalance((Number(val) / 100_000_000).toFixed(4));
+        } else {
+          setShelbyBalance("0.2000");
+        }
       }
     } catch (err) {
-      console.warn("Shelby RPC Balance Fetch Fallback:", err);
+      console.warn("Balance fetch fallback:", err);
       setAptBalance("20");
       setShelbyBalance("0.2000");
     }
@@ -163,6 +164,8 @@ export default function MainApp() {
 
   // Upload Storage Blob lên Shelby Network
   const handleUploadStorage = async () => {
+    if (typeof window === "undefined") return;
+
     if (!connected || !account) {
       alert("Vui lòng kết nối Petra Wallet!");
       return;
@@ -173,7 +176,7 @@ export default function MainApp() {
       return;
     }
 
-    if (typeof window === "undefined" || !window.aptos) {
+    if (!window.aptos) {
       alert("Không tìm thấy Petra Wallet!");
       return;
     }
@@ -183,17 +186,10 @@ export default function MainApp() {
     setTxHash(null);
 
     try {
-      const { AccountAddress } = await import("@aptos-labs/ts-sdk");
-      const {
-        createDefaultErasureCodingProvider,
-        generateCommitments,
-        expectedTotalChunksets,
-        ShelbyBlobClient,
-        ShelbyClient,
-      } = await import("@shelby-protocol/sdk/browser");
+      const aptosSdk = await import("@aptos-labs/ts-sdk");
+      const shelbySdk = await import("@shelby-protocol/sdk/browser");
 
-      // Ép type `as any` để tránh lỗi TypeScript Build trên Vercel
-      const shelbyClient = new ShelbyClient({
+      const shelbyClient = new shelbySdk.ShelbyClient({
         rpcUrl: SHELBY_RPC,
         nodeUrl: SHELBY_RPC,
         apiKey: apiKey,
@@ -203,18 +199,18 @@ export default function MainApp() {
       const arrayBuffer = await selectedFile.arrayBuffer();
       const fileData = new Uint8Array(arrayBuffer);
 
-      const provider = await createDefaultErasureCodingProvider();
-      const commitments = await generateCommitments(provider, fileData);
+      const provider = await shelbySdk.createDefaultErasureCodingProvider();
+      const commitments = await shelbySdk.generateCommitments(provider, fileData);
 
       setStatusMessage("Bước 2/3: Đăng ký Metadata lên Mạng Shelby...");
       const expirationMicros = (1000 * 60 * 60 * 24 * 30 + Date.now()) * 1000;
-      const userAccountAddress = AccountAddress.from(account.address.toString());
+      const userAccountAddress = aptosSdk.AccountAddress.from(account.address.toString());
 
-      const rawPayload = ShelbyBlobClient.createRegisterBlobPayload({
+      const rawPayload = shelbySdk.ShelbyBlobClient.createRegisterBlobPayload({
         account: userAccountAddress,
         blobName: selectedFile.name,
         blobMerkleRoot: commitments.blob_merkle_root,
-        numChunksets: expectedTotalChunksets(commitments.raw_data_size),
+        numChunksets: shelbySdk.expectedTotalChunksets(commitments.raw_data_size),
         expirationMicros: expirationMicros,
         blobSize: commitments.raw_data_size,
       });
