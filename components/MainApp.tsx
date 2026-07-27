@@ -1,13 +1,11 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { useWallet } from "@aptos-labs/wallet-adapter-react";
 import { 
   Wallet, Zap, ArrowLeftRight, Database, TrendingUp, 
   CheckCircle, Droplet, RefreshCw, AlertCircle, Coins, Upload 
 } from "lucide-react";
 
-// Tự định nghĩa Window Interface cho Aptos Wallet
 declare global {
   interface Window {
     aptos?: any;
@@ -18,7 +16,8 @@ const SHELBY_RPC = "https://api.shelbynet.shelby.xyz/v1";
 const apiKey = process.env.NEXT_PUBLIC_SHELBY_API_KEY || "";
 
 export default function MainApp() {
-  const { account, connected, connect, disconnect, wallets } = useWallet();
+  const [account, setAccount] = useState<string | null>(null);
+  const [connected, setConnected] = useState(false);
 
   const [activeTab, setActiveTab] = useState<"trade" | "faucet" | "staking" | "storage">("trade");
   const [payAmount, setPayAmount] = useState("0.001");
@@ -33,11 +32,10 @@ export default function MainApp() {
   const [isError, setIsError] = useState(false);
   const [txHash, setTxHash] = useState<string | null>(null);
 
-  // Lấy số dư trực tiếp qua REST API (Tránh lỗi "Network not supported" từ SDK)
+  // Fetch balance bằng REST API trực tiếp
   const fetchBalance = useCallback(async (addrStr: string) => {
     if (!addrStr) return;
     try {
-      // 1. Lấy APT Balance
       const resApt = await fetch(`${SHELBY_RPC}/accounts/${addrStr}/resource/0x1::coin::CoinStore<0x1::aptos_coin::AptosCoin>`);
       if (resApt.ok) {
         const dataApt = await resApt.json();
@@ -45,7 +43,6 @@ export default function MainApp() {
         setAptBalance((Number(val) / 100_000_000).toLocaleString());
       }
 
-      // 2. Lấy danh sách Resources để tìm Shelby Token
       const resResources = await fetch(`${SHELBY_RPC}/accounts/${addrStr}/resources`);
       if (resResources.ok) {
         const resources = await resResources.json();
@@ -67,10 +64,30 @@ export default function MainApp() {
     }
   }, []);
 
+  // Tự động kiểm tra nếu đã connect ví trước đó
+  useEffect(() => {
+    if (typeof window !== "undefined" && window.aptos) {
+      window.aptos.isConnected().then((isConn: boolean) => {
+        if (isConn) {
+          window.aptos.account().then((acc: any) => {
+            if (acc?.address) {
+              setAccount(acc.address);
+              setConnected(true);
+              fetchBalance(acc.address);
+            }
+          });
+        }
+      });
+    }
+  }, [fetchBalance]);
+
+  // Xử lý Connect / Disconnect trực tiếp qua window.aptos
   const handleWalletAction = async () => {
     if (connected) {
       try {
-        await disconnect();
+        if (window.aptos?.disconnect) await window.aptos.disconnect();
+        setConnected(false);
+        setAccount(null);
         setStatusMessage("Disconnected from wallet.");
         setIsError(false);
       } catch (e) {
@@ -79,18 +96,21 @@ export default function MainApp() {
       return;
     }
 
+    if (typeof window === "undefined" || !window.aptos) {
+      alert("Vui lòng cài đặt ví Petra!");
+      return;
+    }
+
     try {
-      const petraWallet = wallets?.find((w) => w.name === "Petra");
-      if (petraWallet) {
-        await connect(petraWallet.name);
-      } else if (typeof window !== "undefined" && window.aptos) {
-        await window.aptos.connect();
-      } else {
-        alert("Vui lòng cài đặt Petra Wallet!");
-        return;
+      const response = await window.aptos.connect();
+      const addr = response?.address || (await window.aptos.account())?.address;
+      if (addr) {
+        setAccount(addr);
+        setConnected(true);
+        setStatusMessage("Connected to Shelbynet via Petra!");
+        setIsError(false);
+        fetchBalance(addr);
       }
-      setStatusMessage("Connected to Shelbynet via Petra!");
-      setIsError(false);
     } catch (error: any) {
       console.error("Connection error:", error);
       setStatusMessage(`Connection failed: ${error?.message || "User cancelled request"}`);
@@ -98,13 +118,7 @@ export default function MainApp() {
     }
   };
 
-  useEffect(() => {
-    if (account?.address) {
-      fetchBalance(account.address.toString());
-    }
-  }, [account, fetchBalance]);
-
-  // Gửi Giao dịch Swap trực tiếp qua window.aptos
+  // Gửi Giao dịch Swap
   const handleExecuteTrade = async () => {
     if (!connected || !account) {
       alert("Vui lòng kết nối Petra Wallet trước!");
@@ -134,7 +148,7 @@ export default function MainApp() {
         type: "entry_function_payload",
         function: "0x1::aptos_account::transfer",
         type_arguments: [],
-        arguments: [account.address.toString(), amountInOctas.toString()],
+        arguments: [account, amountInOctas.toString()],
       };
 
       const response = await window.aptos.signAndSubmitTransaction(payload);
@@ -144,7 +158,7 @@ export default function MainApp() {
         setTxHash(typeof hash === "string" ? hash : hash.hash);
         setStatusMessage("Giao dịch Swap thành công trên Mạng Shelbynet!");
         setIsError(false);
-        fetchBalance(account.address.toString());
+        fetchBalance(account);
       } else {
         throw new Error("Không nhận được Tx Hash từ ví.");
       }
@@ -162,7 +176,7 @@ export default function MainApp() {
     }
   };
 
-  // Upload Storage Blob lên Shelby Network
+  // Upload Storage Blob
   const handleUploadStorage = async () => {
     if (typeof window === "undefined") return;
 
@@ -204,7 +218,7 @@ export default function MainApp() {
 
       setStatusMessage("Bước 2/3: Đăng ký Metadata lên Mạng Shelby...");
       const expirationMicros = (1000 * 60 * 60 * 24 * 30 + Date.now()) * 1000;
-      const userAccountAddress = aptosSdk.AccountAddress.from(account.address.toString());
+      const userAccountAddress = aptosSdk.AccountAddress.from(account);
 
       const rawPayload = shelbySdk.ShelbyBlobClient.createRegisterBlobPayload({
         account: userAccountAddress,
@@ -269,7 +283,7 @@ export default function MainApp() {
           >
             <Wallet className="h-4 w-4" />
             {connected && account
-              ? `${account.address.toString().slice(0, 6)}...${account.address.toString().slice(-4)}`
+              ? `${account.slice(0, 6)}...${account.slice(-4)}`
               : "Connect Petra Wallet"}
           </button>
         </div>
