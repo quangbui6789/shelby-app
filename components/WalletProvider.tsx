@@ -1,16 +1,18 @@
 "use client";
 
 import { AptosWalletAdapterProvider } from "@aptos-labs/wallet-adapter-react";
-import { Network } from "@aptos-labs/ts-sdk";
+import { AptosConfig, Network } from "@aptos-labs/ts-sdk";
+
+const shelbyNetworkConfig = new AptosConfig({
+  network: Network.CUSTOM,
+  fullnode: "https://rpc.shelbynet.shelby.xyz/v1",
+});
 
 export default function Providers({ children }: { children: React.ReactNode }) {
   return (
     <AptosWalletAdapterProvider
       autoConnect={false}
-      dappConfig={{
-        network: Network.CUSTOM,
-        aptosApiKey: process.env.NEXT_PUBLIC_SHELBY_API_KEY,
-      }}
+      dappConfig={shelbyNetworkConfig}
       onError={(error) => {
         console.log("Wallet connection error:", error);
       }}
