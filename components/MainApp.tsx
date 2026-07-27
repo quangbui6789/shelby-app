@@ -138,8 +138,8 @@ function AppContent() {
           function: "0x1::aptos_account::transfer",
           typeArguments: [],
           functionArguments: [userAddress, amountInOctas.toString()],
-        } as any,
-      });
+        },
+      } as any);
 
       if (response?.hash) {
         setTxHash(response.hash);
@@ -213,8 +213,8 @@ function AppContent() {
           function: rawPayload.function,
           typeArguments: rawPayload.type_arguments,
           functionArguments: rawPayload.arguments,
-        } as any,
-      });
+        },
+      } as any);
 
       setTxHash(response.hash);
 
