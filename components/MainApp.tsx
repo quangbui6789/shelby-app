@@ -3,16 +3,60 @@
 import { useState, useEffect, useCallback } from "react";
 import { 
   Zap, ArrowLeftRight, Database, TrendingUp, 
-  CheckCircle, Droplet, RefreshCw, AlertCircle, Coins, Upload 
+  CheckCircle, Droplet, RefreshCw, AlertCircle, Coins, Upload, Wallet, LogOut
 } from "lucide-react";
 import { 
   AptosWalletAdapterProvider, 
   useWallet 
 } from "@aptos-labs/wallet-adapter-react";
-import { WalletConnector } from "@aptos-labs/wallet-adapter-mui-design";
 
 const SHELBY_RPC = "https://api.shelbynet.shelby.xyz/v1";
 const apiKey = process.env.NEXT_PUBLIC_SHELBY_API_KEY || "";
+
+function CustomWalletButton() {
+  const { connect, disconnect, connected, account, wallets } = useWallet();
+
+  if (connected && account) {
+    const addr = account.address.toString();
+    const shortAddr = `${addr.slice(0, 6)}...${addr.slice(-4)}`;
+    return (
+      <button 
+        onClick={() => disconnect()}
+        className="flex items-center gap-2 bg-slate-800 hover:bg-slate-700 text-teal-400 border border-teal-500/30 px-4 py-2 rounded-xl text-xs font-semibold transition"
+      >
+        <Wallet className="h-4 w-4 text-teal-400" />
+        <span>{shortAddr}</span>
+        <LogOut className="h-3.5 w-3.5 text-slate-400 ml-1" />
+      </button>
+    );
+  }
+
+  const handleConnect = async () => {
+    const petraWallet = wallets?.find(
+      (w) => w.name.toLowerCase().includes("petra")
+    ) || wallets?.[0];
+
+    if (petraWallet) {
+      try {
+        await connect(petraWallet.name);
+      } catch (err) {
+        console.error("Connect wallet error:", err);
+      }
+    } else {
+      alert("Không tìm thấy ví Petra! Vui lòng cài đặt Petra Aptos Wallet extension.");
+    }
+  };
+
+  return (
+    <button
+      onClick={handleConnect}
+      className="flex items-center gap-2 bg-teal-500 hover:bg-teal-400 text-slate-950 font-bold px-4 py-2.5 rounded-xl text-xs transition shadow-lg shadow-teal-500/20"
+    >
+      <Wallet className="h-4 w-4" />
+      <span>Connect Petra Wallet</span>
+    </button>
+  );
+}
 
 function AppContent() {
   const { account, connected, signAndSubmitTransaction } = useWallet();
@@ -32,7 +76,6 @@ function AppContent() {
 
   const userAddress = account?.address ? account.address.toString() : null;
 
-  // Fetch balance
   const fetchBalance = useCallback(async (addrStr: string) => {
     if (!addrStr) return;
     try {
@@ -70,7 +113,6 @@ function AppContent() {
     }
   }, [connected, userAddress, fetchBalance]);
 
-  // Gửi Giao dịch Swap
   const handleExecuteTrade = async () => {
     if (!connected || !userAddress) {
       alert("Vui lòng kết nối Petra Wallet trước!");
@@ -92,11 +134,11 @@ function AppContent() {
       const amountInOctas = Math.floor(amountToUse * 100_000_000);
 
       const response = await signAndSubmitTransaction({
-        data: {
+        payload: {
           function: "0x1::aptos_account::transfer",
           typeArguments: [],
           functionArguments: [userAddress, amountInOctas.toString()],
-        },
+        } as any,
       });
 
       if (response?.hash) {
@@ -121,7 +163,6 @@ function AppContent() {
     }
   };
 
-  // Upload Storage Blob
   const handleUploadStorage = async () => {
     if (!connected || !userAddress) {
       alert("Vui lòng kết nối Petra Wallet!");
@@ -168,11 +209,11 @@ function AppContent() {
       });
 
       const response = await signAndSubmitTransaction({
-        data: {
-          function: rawPayload.function as any,
+        payload: {
+          function: rawPayload.function,
           typeArguments: rawPayload.type_arguments,
           functionArguments: rawPayload.arguments,
-        },
+        } as any,
       });
 
       setTxHash(response.hash);
@@ -221,8 +262,7 @@ function AppContent() {
             </div>
           )}
 
-          {/* Nút Connect Wallet chuẩn Aptos Adapter */}
-          <WalletConnector />
+          <CustomWalletButton />
         </div>
       </header>
 
