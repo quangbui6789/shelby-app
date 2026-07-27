@@ -88,7 +88,7 @@ export default function MainApp() {
         alert("Vui lòng cài đặt Petra Wallet!");
         return;
       }
-      setStatusMessage("Connected to Shelby Network via Petra!");
+      setStatusMessage("Connected to Shelbynet via Petra!");
       setIsError(false);
     } catch (error: any) {
       console.error("Connection error:", error);
@@ -103,7 +103,7 @@ export default function MainApp() {
     }
   }, [account, fetchBalance]);
 
-  // Gửi Giao dịch Swap trực tiếp qua window.aptos để tránh bị chặn Custom Network
+  // Gửi Giao dịch Swap trực tiếp qua window.aptos
   const handleExecuteTrade = async () => {
     if (!connected || !account) {
       alert("Vui lòng kết nối Petra Wallet trước!");
@@ -122,7 +122,7 @@ export default function MainApp() {
     }
 
     setIsProcessing(true);
-    setStatusMessage("Đang chờ xác nhận giao dịch trên Petra Wallet (Shelby Testnet)...");
+    setStatusMessage("Đang chờ xác nhận giao dịch trên Petra Wallet (Shelbynet)...");
     setIsError(false);
     setTxHash(null);
 
@@ -136,13 +136,12 @@ export default function MainApp() {
         arguments: [account.address.toString(), amountInOctas.toString()],
       };
 
-      // Tương tác trực tiếp với Ví Petra
       const response = await window.aptos.signAndSubmitTransaction(payload);
       const hash = response?.hash || response;
 
       if (hash) {
         setTxHash(typeof hash === "string" ? hash : hash.hash);
-        setStatusMessage("Giao dịch Swap thành công trên Mạng Shelby Testnet!");
+        setStatusMessage("Giao dịch Swap thành công trên Mạng Shelbynet!");
         setIsError(false);
         fetchBalance(account.address.toString());
       } else {
@@ -155,7 +154,7 @@ export default function MainApp() {
       if (msg.includes("rejected") || error?.code === 4001) {
         setStatusMessage("Giao dịch bị hủy: Người dùng từ chối yêu cầu.");
       } else {
-        setStatusMessage(`Lỗi Shelby Network: ${msg || "Giao dịch thất bại."}`);
+        setStatusMessage(`Lỗi Shelbynet: ${msg || "Giao dịch thất bại."}`);
       }
     } finally {
       setIsProcessing(false);
@@ -193,10 +192,12 @@ export default function MainApp() {
         ShelbyClient,
       } = await import("@shelby-protocol/sdk/browser");
 
+      // Ép type `as any` để tránh lỗi TypeScript Build trên Vercel
       const shelbyClient = new ShelbyClient({
         rpcUrl: SHELBY_RPC,
+        nodeUrl: SHELBY_RPC,
         apiKey: apiKey,
-      });
+      } as any);
 
       setStatusMessage("Bước 1/3: Đang mã hóa file...");
       const arrayBuffer = await selectedFile.arrayBuffer();
@@ -218,7 +219,6 @@ export default function MainApp() {
         blobSize: commitments.raw_data_size,
       });
 
-      // Gọi window.aptos gửi Blob Payload
       const response = await window.aptos.signAndSubmitTransaction(rawPayload);
       const hash = response?.hash || response;
       setTxHash(typeof hash === "string" ? hash : hash.hash);
@@ -250,7 +250,7 @@ export default function MainApp() {
           </div>
           <div>
             <span className="text-xl font-bold tracking-wider text-teal-400 block">SHELBY</span>
-            <span className="text-xs text-slate-500">Shelby Testnet Ecosystem</span>
+            <span className="text-xs text-slate-500">Shelbynet Ecosystem</span>
           </div>
         </div>
 
@@ -320,7 +320,7 @@ export default function MainApp() {
           <div className="w-full max-w-md p-6 rounded-3xl bg-slate-900 border border-slate-800 shadow-2xl">
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-xl font-bold text-white">Swap on Shelby</h2>
-              <span className="text-xs bg-teal-500/10 text-teal-400 border border-teal-500/30 px-2.5 py-1 rounded-lg">Shelby Testnet</span>
+              <span className="text-xs bg-teal-500/10 text-teal-400 border border-teal-500/30 px-2.5 py-1 rounded-lg">Shelbynet</span>
             </div>
 
             <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 mb-2">
@@ -375,8 +375,8 @@ export default function MainApp() {
         {activeTab === "faucet" && (
           <div className="w-full max-w-md p-6 rounded-3xl bg-slate-900 border border-slate-800 text-center shadow-2xl">
             <Droplet className="h-12 w-12 text-teal-400 mx-auto mb-3" />
-            <h2 className="text-xl font-bold text-white mb-1">Shelby Testnet Faucet</h2>
-            <p className="text-xs text-slate-400 mb-6">Nhận token thử nghiệm để trải nghiệm mạng Shelby.</p>
+            <h2 className="text-xl font-bold text-white mb-1">Shelbynet Faucet</h2>
+            <p className="text-xs text-slate-400 mb-6">Nhận token thử nghiệm để trải nghiệm mạng Shelbynet.</p>
             <div className="flex flex-col gap-3">
               <button
                 onClick={() => window.open("https://faucet.shelbynet.shelby.xyz", "_blank")}
