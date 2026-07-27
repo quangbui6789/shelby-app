@@ -14,7 +14,7 @@ declare global {
   }
 }
 
-const SHELBY_RPC = "https://rpc.shelbynet.shelby.xyz/v1";
+const SHELBY_RPC = "https://api.shelbynet.shelby.xyz/v1";
 const apiKey = process.env.NEXT_PUBLIC_SHELBY_API_KEY || "";
 
 export default function MainApp() {
