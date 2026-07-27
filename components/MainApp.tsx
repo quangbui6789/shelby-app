@@ -120,11 +120,6 @@ export default function MainApp() {
       return;
     }
 
-    if (!signAndSubmitTransaction) {
-      alert("Wallet adapter is not ready.");
-      return;
-    }
-
     const amountToUse = parseFloat(payAmount || "0.001");
     if (!amountToUse || amountToUse <= 0) {
       alert("Please enter a valid amount.");
@@ -148,16 +143,31 @@ export default function MainApp() {
       const amountInOctas = Math.floor(amountToUse * 100_000_000);
       const senderAddress = account.address.toString();
 
-      // Sử dụng Wallet Standard API chính thức của Aptos
-      const pendingTx = await signAndSubmitTransaction({
-        data: {
-          function: "0x1::aptos_account::transfer",
-          typeArguments: [],
-          functionArguments: [senderAddress, amountInOctas],
-        } as any,
-      } as any);
+      let pendingTx: any;
 
-      const hash = pendingTx?.hash || (pendingTx as any)?.transactionHash;
+      // Ưu tiên gọi trực tiếp qua window.aptos để tránh lỗi Custom Network từ Adapter
+      if (typeof window !== "undefined" && (window as any).aptos) {
+        pendingTx = await (window as any).aptos.signAndSubmitTransaction({
+          payload: {
+            type: "entry_function_payload",
+            function: "0x1::aptos_account::transfer",
+            type_arguments: [],
+            arguments: [senderAddress, amountInOctas.toString()],
+          }
+        });
+      } else if (signAndSubmitTransaction) {
+        pendingTx = await signAndSubmitTransaction({
+          data: {
+            function: "0x1::aptos_account::transfer",
+            typeArguments: [],
+            functionArguments: [senderAddress, amountInOctas],
+          } as any,
+        } as any);
+      } else {
+        throw new Error("No wallet provider found.");
+      }
+
+      const hash = pendingTx?.hash || pendingTx?.transactionHash;
 
       if (hash) {
         setTxHash(hash);
@@ -186,11 +196,6 @@ export default function MainApp() {
   const handleUploadStorage = async () => {
     if (!connected || !account?.address) {
       alert("Please connect your Petra Wallet first!");
-      return;
-    }
-
-    if (!signAndSubmitTransaction) {
-      alert("Wallet adapter is not ready.");
       return;
     }
 
@@ -245,11 +250,26 @@ export default function MainApp() {
         blobSize: commitments.raw_data_size,
       });
 
-      const pendingTx = await signAndSubmitTransaction({
-        data: payload as any,
-      } as any);
+      let pendingTx: any;
 
-      const hash = pendingTx?.hash || (pendingTx as any)?.transactionHash;
+      if (typeof window !== "undefined" && (window as any).aptos) {
+        pendingTx = await (window as any).aptos.signAndSubmitTransaction({
+          payload: {
+            type: "entry_function_payload",
+            function: payload.function,
+            type_arguments: payload.typeArguments || [],
+            arguments: payload.functionArguments || [],
+          }
+        });
+      } else if (signAndSubmitTransaction) {
+        pendingTx = await signAndSubmitTransaction({
+          data: payload as any,
+        } as any);
+      } else {
+        throw new Error("No wallet provider found.");
+      }
+
+      const hash = pendingTx?.hash || pendingTx?.transactionHash;
       setTxHash(hash);
 
       await aptosClient.waitForTransaction({ transactionHash: hash });
