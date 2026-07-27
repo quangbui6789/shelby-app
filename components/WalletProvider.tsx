@@ -7,16 +7,17 @@ export default function Providers({ children }: { children: React.ReactNode }) {
   return (
     <AptosWalletAdapterProvider
       autoConnect={false}
-      dappConfig={{
-        network: Network.CUSTOM,
-        // Dùng đúng URL hiển thị trên ví Petra của bạn:
-        customNetworkUrl: "https://api.shelbynet.shelby.xyz/v1",
-        aptosApiKeys: {
-          custom: process.env.NEXT_PUBLIC_SHELBY_API_KEY,
-        },
-      }}
+      dappConfig={
+        {
+          network: Network.CUSTOM,
+          fullnode: "https://api.shelbynet.shelby.xyz/v1",
+          nodeUrl: "https://api.shelbynet.shelby.xyz/v1",
+          aptosApiKeys: {
+            custom: process.env.NEXT_PUBLIC_SHELBY_API_KEY,
+          },
+        } as any
+      }
       onError={(error) => {
-        // Bắt lỗi nhẹ để không bắn màn hình đỏ ngắt kết nối
         console.log("Wallet connection status:", error);
       }}
     >
