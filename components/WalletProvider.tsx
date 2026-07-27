@@ -1,4 +1,5 @@
 "use client";
+
 import { AptosWalletAdapterProvider } from "@aptos-labs/wallet-adapter-react";
 import { Network } from "@aptos-labs/ts-sdk";
 
@@ -11,9 +12,8 @@ export function Providers({ children }: { children: React.ReactNode }) {
         aptosApiKey: process.env.NEXT_PUBLIC_SHELBY_API_KEY,
         customNetwork: {
           name: "shelbynet",
-          chainId: <CHAIN_ID_CỦA_SHELBYNET>, // bắt buộc, số nguyên
+          chainId: 0, // TODO: thay bằng chainId thật của Shelbynet
           url: "https://rpc.shelbynet.shelby.xyz/v1",
-          // indexer: "https://indexer.shelbynet.shelby.xyz/v1", // nếu Shelby có indexer riêng
         },
       }}
     >
