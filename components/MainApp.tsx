@@ -66,7 +66,8 @@ function CustomWalletButton() {
 }
 
 function AppContent() {
-  const { account, connected } = useWallet();
+  // Sử dụng trực tiếp signAndSubmitTransaction và signTransaction từ Adapter hook (AIP-62)
+  const { account, connected, signAndSubmitTransaction, signTransaction } = useWallet();
 
   const [activeTab, setActiveTab] = useState<"trade" | "faucet" | "staking" | "storage">("trade");
   const [payToken, setPayToken] = useState<"ShelbyUSD" | "APT">("ShelbyUSD");
@@ -127,36 +128,38 @@ function AppContent() {
     setReceiveAmount((parseFloat(payAmount || "0") * rate).toFixed(4));
   };
 
-  // Kỹ thuật triệt tiêu lỗi: Build raw tx -> Petra sign -> Submit qua Aptos Client RPC
+  // Hàm thực thi transaction dùng Wallet Standard AIP-62
   const executeTransactionWithStandard = async (payloadData: {
     function: string;
     typeArguments?: string[];
     functionArguments: any[];
   }) => {
-    const aptosWallet = (window as any).aptos || (window as any).petra;
-
-    if (!aptosWallet || !userAddress) {
+    if (!connected || !userAddress) {
       throw new Error("Chưa kết nối ví Petra!");
     }
 
-    try {
-      // 1. Tạo Raw Transaction bằng SDK v2
-      const rawTx = await aptosClient.transaction.build.simple({
-        sender: userAddress,
-        data: {
-          function: payloadData.function as `${string}::${string}::${string}`,
-          typeArguments: payloadData.typeArguments || [],
-          functionArguments: payloadData.functionArguments || [],
-        },
-      });
+    // Cấu trúc transaction chuẩn Aptos SDK v2 / AIP-62
+    const transactionData = {
+      data: {
+        function: payloadData.function as `${string}::${string}::${string}`,
+        typeArguments: payloadData.typeArguments || [],
+        functionArguments: payloadData.functionArguments || [],
+      }
+    };
 
-      // 2. Yêu cầu Petra ký
-      let authenticator;
-      if (typeof aptosWallet.signTransaction === "function") {
-        authenticator = await aptosWallet.signTransaction(rawTx);
-      } else {
-        // Fallback cho extension phiên bản cũ
-        return await aptosWallet.signAndSubmitTransaction({
+    try {
+      // 1. Thử gửi qua signAndSubmitTransaction của Adapter hook
+      const response = await signAndSubmitTransaction(transactionData as any);
+      return response;
+    } catch (err: any) {
+      console.warn("signAndSubmitTransaction fallback strategy:", err);
+      
+      // 2. Fallback nếu dùng AIP-62 Standard Feature trực tiếp từ window.aptos (Không dùng window.petra)
+      const standardWallet = (window as any).aptos;
+      const signAndSubmitFeature = standardWallet?.features?.["aptos:signAndSubmitTransaction"]?.signAndSubmitTransaction;
+      
+      if (signAndSubmitFeature) {
+        return await signAndSubmitFeature({
           payload: {
             function: payloadData.function,
             type_arguments: payloadData.typeArguments || [],
@@ -165,15 +168,6 @@ function AppContent() {
         });
       }
 
-      // 3. Tự submit transaction đã ký lên Shelbynet RPC
-      const response = await aptosClient.transaction.submit.simple({
-        transaction: rawTx,
-        senderAuthenticator: authenticator,
-      });
-
-      return response;
-    } catch (err: any) {
-      console.error("Execute Tx Error:", err);
       throw err;
     }
   };
@@ -191,7 +185,7 @@ function AppContent() {
     }
 
     setIsProcessing(true);
-    setStatusMessage("Đang gửi yêu cầu ký giao dịch tới Petra Wallet...");
+    setStatusMessage("Đang gửi yêu cầu xác nhận tới Petra Wallet...");
     setIsError(false);
     setTxHash(null);
 
