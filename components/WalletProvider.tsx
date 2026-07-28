@@ -2,17 +2,13 @@
 
 import React from "react";
 import { AptosWalletAdapterProvider } from "@aptos-labs/wallet-adapter-react";
-import { Network } from "@aptos-labs/ts-sdk";
+import { PetraWallet } from "petra-plugin-wallet-adapter";
 
 export default function Providers({ children }: { children: React.ReactNode }) {
+  const plugins = [new PetraWallet()];
+
   return (
-    <AptosWalletAdapterProvider
-      autoConnect={true}
-      dappConfig={{
-        network: Network.CUSTOM,
-        aptosApiProvider: "https://api.shelbynet.shelby.xyz/v1",
-      }}
-    >
+    <AptosWalletAdapterProvider plugins={plugins} autoConnect={true}>
       {children}
     </AptosWalletAdapterProvider>
   );
