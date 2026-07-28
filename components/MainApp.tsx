@@ -13,7 +13,7 @@ import { Aptos, AptosConfig, Network } from "@aptos-labs/ts-sdk";
 const SHELBY_RPC = "https://api.shelbynet.shelby.xyz/v1";
 const apiKey = process.env.NEXT_PUBLIC_SHELBY_API_KEY || "";
 
-// Dùng Network.TESTNET thay vì Network.CUSTOM để Wallet Adapter không throw "Invalid network"
+// Cấu hình AptosClient với TESTNET thay vì CUSTOM
 const aptosClient = new Aptos(
   new AptosConfig({
     network: Network.TESTNET,
@@ -128,7 +128,7 @@ function AppContent() {
     setReceiveAmount((parseFloat(payAmount || "0") * rate).toFixed(4));
   };
 
-  // Hàm ký và gửi Transaction tương thích cả Standard Feature và Adapter Hook
+  // Thực thi giao dịch thông qua Standard Feature để bypass lỗi Invalid Network của Adapter
   const executeTransactionWithStandard = async (payloadData: {
     function: string;
     typeArguments?: string[];
@@ -138,7 +138,7 @@ function AppContent() {
       throw new Error("Chưa kết nối ví Petra!");
     }
 
-    // 1. Thử gọi trực tiếp qua Wallet Standard Feature từ window.aptos (bỏ qua Adapter check network)
+    // 1. Gọi trực tiếp feature 'aptos:signAndSubmitTransaction' của Petra qua Aptos Wallet Standard (AIP-62)
     const standardWallet = (window as any).aptos;
     const signAndSubmitFeature = standardWallet?.features?.["aptos:signAndSubmitTransaction"]?.signAndSubmitTransaction;
 
@@ -152,7 +152,7 @@ function AppContent() {
       });
     }
 
-    // 2. Fallback qua hook signAndSubmitTransaction
+    // 2. Fallback dùng hook của Adapter nếu không gọi được trực tiếp
     const transactionData = {
       data: {
         function: payloadData.function as `${string}::${string}::${string}`,
