@@ -8,9 +8,17 @@ import {
 import { 
   useWallet 
 } from "@aptos-labs/wallet-adapter-react";
+import { Aptos, AptosConfig, Network } from "@aptos-labs/ts-sdk";
 
 const SHELBY_RPC = "https://api.shelbynet.shelby.xyz/v1";
 const apiKey = process.env.NEXT_PUBLIC_SHELBY_API_KEY || "";
+
+const aptosClient = new Aptos(
+  new AptosConfig({
+    network: Network.CUSTOM,
+    fullnode: SHELBY_RPC,
+  })
+);
 
 function CustomWalletButton() {
   const { connect, disconnect, connected, account, wallets } = useWallet();
@@ -78,13 +86,14 @@ function AppContent() {
   const fetchBalance = useCallback(async (addrStr: string) => {
     if (!addrStr) return;
     try {
-      const resApt = await fetch(`${SHELBY_RPC}/accounts/${addrStr}/resource/0x1::coin::CoinStore<0x1::aptos_coin::AptosCoin>`);
-      if (resApt.ok) {
-        const dataApt = await resApt.json();
-        const val = dataApt?.data?.coin?.value || "0";
-        setAptBalance((Number(val) / 100_000_000).toLocaleString());
-      }
+      // Dùng Aptos SDK fetch Coin Balance chính xác
+      const aptAmount = await aptosClient.getAccountCoinAmount({
+        accountAddress: addrStr,
+        coinType: "0x1::aptos_coin::AptosCoin",
+      });
+      setAptBalance((aptAmount / 100_000_000).toLocaleString());
 
+      // Fetch Shelby USD Balance
       const resResources = await fetch(`${SHELBY_RPC}/accounts/${addrStr}/resources`);
       if (resResources.ok) {
         const resources = await resResources.json();
@@ -101,8 +110,17 @@ function AppContent() {
       }
     } catch (err) {
       console.warn("Balance fetch fallback:", err);
-      setAptBalance("20");
-      setShelbyBalance("0.2000");
+      // Fallback gọi trực tiếp account info
+      try {
+        const resApt = await fetch(`${SHELBY_RPC}/accounts/${addrStr}/resource/0x1::coin::CoinStore<0x1::aptos_coin::AptosCoin>`);
+        if (resApt.ok) {
+          const dataApt = await resApt.json();
+          const val = dataApt?.data?.coin?.value || "0";
+          setAptBalance((Number(val) / 100_000_000).toLocaleString());
+        }
+      } catch (e) {
+        setAptBalance("0");
+      }
     }
   }, []);
 
@@ -132,25 +150,15 @@ function AppContent() {
     try {
       const amountInOctas = Math.floor(amountToUse * 100_000_000);
 
-      const payload = {
-        type: "entry_function_payload",
-        function: "0x1::aptos_account::transfer",
-        type_arguments: [],
-        arguments: [userAddress, amountInOctas.toString()],
-      };
-
-      let response: any;
-      if (typeof window !== "undefined" && (window as any).aptos) {
-        response = await (window as any).aptos.signAndSubmitTransaction(payload);
-      } else {
-        response = await signAndSubmitTransaction({
-          data: {
-            function: "0x1::aptos_account::transfer",
-            typeArguments: [],
-            functionArguments: [userAddress, amountInOctas.toString()],
-          }
-        } as any);
-      }
+      // SỬA LỖI: Dùng chuẩn Wallet Adapter Standard (Không dùng window.petra nữa)
+      const response = await signAndSubmitTransaction({
+        sender: userAddress,
+        data: {
+          function: "0x1::aptos_account::transfer",
+          typeArguments: [],
+          functionArguments: [userAddress, amountInOctas],
+        }
+      });
 
       if (response?.hash) {
         setTxHash(response.hash);
@@ -219,25 +227,14 @@ function AppContent() {
         blobSize: commitments.raw_data_size,
       });
 
-      let response: any;
-      const payloadData = {
-        type: "entry_function_payload",
-        function: rawPayload.function || rawPayload.payload?.function,
-        type_arguments: rawPayload.type_arguments || rawPayload.payload?.typeArguments || [],
-        arguments: rawPayload.arguments || rawPayload.payload?.functionArguments || [],
-      };
-
-      if (typeof window !== "undefined" && (window as any).aptos) {
-        response = await (window as any).aptos.signAndSubmitTransaction(payloadData);
-      } else {
-        response = await signAndSubmitTransaction({
-          data: {
-            function: payloadData.function,
-            typeArguments: payloadData.type_arguments,
-            functionArguments: payloadData.arguments,
-          }
-        } as any);
-      }
+      const response = await signAndSubmitTransaction({
+        sender: userAddress,
+        data: {
+          function: rawPayload.function || rawPayload.payload?.function,
+          typeArguments: rawPayload.type_arguments || rawPayload.payload?.typeArguments || [],
+          functionArguments: rawPayload.arguments || rawPayload.payload?.functionArguments || [],
+        }
+      });
 
       setTxHash(response?.hash);
 
