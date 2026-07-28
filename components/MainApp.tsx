@@ -6,7 +6,7 @@ import {
   CheckCircle, Droplet, RefreshCw, AlertCircle, Coins, Upload, Wallet, LogOut, ArrowUpDown
 } from "lucide-react";
 import { useWallet } from "@aptos-labs/wallet-adapter-react";
-import { Aptos, AptosConfig, Network } from "@aptos-labs/ts-sdk";
+import { Aptos, AptosConfig, Network, AccountAddress } from "@aptos-labs/ts-sdk";
 
 const SHELBY_RPC = "https://api.shelbynet.shelby.xyz/v1";
 const apiKey = process.env.NEXT_PUBLIC_SHELBY_API_KEY || "";
@@ -20,6 +20,13 @@ const aptosClient = new Aptos(
 
 function CustomWalletButton() {
   const { connect, disconnect, connected, account, wallets } = useWallet();
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  if (!mounted) return null;
 
   if (connected && account) {
     const addr = account.address.toString();
@@ -193,7 +200,6 @@ function AppContent() {
     setTxHash(null);
 
     try {
-      const aptosSdk = await import("@aptos-labs/ts-sdk");
       const shelbySdk = await import("@shelby-protocol/sdk/browser");
 
       const shelbyClient = new shelbySdk.ShelbyClient({
@@ -211,7 +217,7 @@ function AppContent() {
 
       setStatusMessage("Bước 2/3: Đăng ký Metadata lên Mạng Shelby...");
       const expirationMicros = (1000 * 60 * 60 * 24 * 30 + Date.now()) * 1000;
-      const userAccountAddress = aptosSdk.AccountAddress.from(userAddress);
+      const userAccountAddress = AccountAddress.from(userAddress);
 
       const rawPayload: any = shelbySdk.ShelbyBlobClient.createRegisterBlobPayload({
         account: userAccountAddress,
