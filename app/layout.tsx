@@ -1,15 +1,4 @@
-import "./globals.css";
-import dynamic from "next/dynamic";
-
-// Dynamic import WalletProvider với ssr: false để tránh crash ở server
-const WalletProviderNoSSR = dynamic(() => import("@/components/WalletProvider"), {
-  ssr: false,
-});
-
-export const metadata = {
-  title: "Shelby App",
-  description: "Shelbynet Ecosystem",
-};
+import Providers from "@/components/WalletProvider";
 
 export default function RootLayout({
   children,
@@ -18,8 +7,8 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body className="bg-slate-950 min-h-screen text-white">
-        <WalletProviderNoSSR>{children}</WalletProviderNoSSR>
+      <body>
+        <Providers>{children}</Providers>
       </body>
     </html>
   );
