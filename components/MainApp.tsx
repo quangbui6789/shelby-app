@@ -8,7 +8,7 @@ import {
 import { 
   useWallet 
 } from "@aptos-labs/wallet-adapter-react";
-import { Aptos, AptosConfig, Network } from "@aptos-labs/ts-sdk";
+import { Aptos, AptosConfig, Network, InputTransactionData } from "@aptos-labs/ts-sdk";
 
 const SHELBY_RPC = "https://api.shelbynet.shelby.xyz/v1";
 const apiKey = process.env.NEXT_PUBLIC_SHELBY_API_KEY || "";
@@ -66,7 +66,7 @@ function CustomWalletButton() {
 }
 
 function AppContent() {
-  const { account, connected } = useWallet();
+  const { account, connected, signAndSubmitTransaction } = useWallet();
 
   const [activeTab, setActiveTab] = useState<"trade" | "faucet" | "staking" | "storage">("trade");
   const [payToken, setPayToken] = useState<"ShelbyUSD" | "APT">("ShelbyUSD");
@@ -147,19 +147,17 @@ function AppContent() {
     try {
       const amountInOctas = Math.floor(amountToUse * 100_000_000);
 
-      // Bypass Aptos Wallet Adapter restriction bằng cách dùng trực tiếp extension provider
-      const walletProvider = (window as any).aptos || (window as any).petra;
-      if (!walletProvider) {
-        throw new Error("Không tìm thấy Petra Extension trong trình duyệt.");
-      }
-
-      const payload = {
-        function: "0x1::aptos_account::transfer",
-        type_arguments: [],
-        arguments: [userAddress, amountInOctas.toString()],
+      // Định dạng payload chuẩn Aptos Standard AIP-62 (kiểu InputTransactionData)
+      const transaction: InputTransactionData = {
+        data: {
+          function: "0x1::aptos_account::transfer",
+          typeArguments: [],
+          functionArguments: [userAddress, amountInOctas],
+        },
       };
 
-      const response = await walletProvider.signAndSubmitTransaction(payload);
+      // Gửi qua Adapter tiêu chuẩn
+      const response = await signAndSubmitTransaction(transaction);
 
       if (response?.hash) {
         setTxHash(response.hash);
@@ -228,14 +226,15 @@ function AppContent() {
         blobSize: commitments.raw_data_size,
       });
 
-      const walletProvider = (window as any).aptos || (window as any).petra;
-      const payloadData = {
-        function: rawPayload.function || rawPayload.payload?.function,
-        type_arguments: rawPayload.type_arguments || rawPayload.payload?.typeArguments || [],
-        arguments: rawPayload.arguments || rawPayload.payload?.functionArguments || [],
+      const transaction: InputTransactionData = {
+        data: {
+          function: rawPayload.function || rawPayload.payload?.function,
+          typeArguments: rawPayload.type_arguments || rawPayload.payload?.typeArguments || [],
+          functionArguments: rawPayload.arguments || rawPayload.payload?.functionArguments || [],
+        },
       };
 
-      const response = await walletProvider.signAndSubmitTransaction(payloadData);
+      const response = await signAndSubmitTransaction(transaction);
       setTxHash(response?.hash);
 
       setStatusMessage("Bước 3/3: Tải dữ liệu Blob lên Shelby RPC Storage...");
