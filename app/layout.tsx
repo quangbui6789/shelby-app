@@ -1,3 +1,4 @@
+import "./globals.css"; // <--- Import CSS toàn cục
 import Providers from "@/components/WalletProvider";
 
 export default function RootLayout({
@@ -7,7 +8,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body>
+      <body className="bg-slate-950">
         <Providers>{children}</Providers>
       </body>
     </html>
