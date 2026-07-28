@@ -66,7 +66,7 @@ function CustomWalletButton() {
 }
 
 function AppContent() {
-  const { account, connected, wallet, signAndSubmitTransaction } = useWallet();
+  const { account, connected } = useWallet();
 
   const [activeTab, setActiveTab] = useState<"trade" | "faucet" | "staking" | "storage">("trade");
   const [payToken, setPayToken] = useState<"ShelbyUSD" | "APT">("ShelbyUSD");
@@ -127,23 +127,34 @@ function AppContent() {
     setReceiveAmount((parseFloat(payAmount || "0") * rate).toFixed(4));
   };
 
-  // Helper thực thi giao dịch chuẩn AIP-62
+  // Gọi trực tiếp window.aptos để tránh rào cản Custom Network từ Adapter
   const executeTransactionWithStandard = async (payloadData: {
     function: string;
     typeArguments?: string[];
     functionArguments: any[];
   }) => {
-    if (!wallet) throw new Error("Chưa kết nối ví!");
+    const aptosWallet = (window as any).aptos;
 
-    const transactionInput: any = {
-      data: {
-        function: payloadData.function as `${string}::${string}::${string}`,
-        typeArguments: payloadData.typeArguments || [],
-        functionArguments: payloadData.functionArguments || [],
-      }
+    if (!aptosWallet) {
+      throw new Error("Không tìm thấy Petra Wallet trên trình duyệt!");
+    }
+
+    const transactionPayload = {
+      function: payloadData.function,
+      type_arguments: payloadData.typeArguments || [],
+      arguments: payloadData.functionArguments || [],
     };
 
-    return await signAndSubmitTransaction(transactionInput);
+    try {
+      return await aptosWallet.signAndSubmitTransaction(transactionPayload);
+    } catch (err: any) {
+      if (err?.message?.includes("payload") || err?.code) {
+        return await aptosWallet.signAndSubmitTransaction({
+          payload: transactionPayload
+        });
+      }
+      throw err;
+    }
   };
 
   const handleExecuteTrade = async () => {
@@ -174,7 +185,7 @@ function AppContent() {
 
       const response = await executeTransactionWithStandard(payload);
 
-      const hash = response?.hash;
+      const hash = typeof response === "string" ? response : response?.hash;
       if (hash) {
         setTxHash(hash);
         setStatusMessage(`Swap ${payToken} thành công trên Mạng Shelbynet!`);
@@ -249,7 +260,7 @@ function AppContent() {
       };
 
       const response = await executeTransactionWithStandard(payloadData);
-      const hash = response?.hash;
+      const hash = typeof response === "string" ? response : response?.hash;
       setTxHash(hash);
 
       setStatusMessage("Bước 3/3: Tải dữ liệu Blob lên Shelby RPC Storage...");
@@ -344,7 +355,6 @@ function AppContent() {
               <span className="text-xs bg-teal-500/10 text-teal-400 border border-teal-500/30 px-2.5 py-1 rounded-lg">Shelbynet</span>
             </div>
 
-            {/* Input 1 */}
             <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 mb-2">
               <div className="flex justify-between text-xs text-slate-400 mb-2">
                 <span>You Pay</span>
@@ -371,7 +381,6 @@ function AppContent() {
               </div>
             </div>
 
-            {/* Switch Direction Button */}
             <div className="flex justify-center -my-3 z-10 relative">
               <button 
                 onClick={handleSwitchDirection}
@@ -382,7 +391,6 @@ function AppContent() {
               </button>
             </div>
 
-            {/* Input 2 */}
             <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 mb-6">
               <div className="flex justify-between text-xs text-slate-400 mb-2">
                 <span>You Receive (Estimated)</span>
