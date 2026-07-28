@@ -8,7 +8,7 @@ import {
 import { 
   useWallet 
 } from "@aptos-labs/wallet-adapter-react";
-import { Aptos, AptosConfig, Network, InputTransactionData } from "@aptos-labs/ts-sdk";
+import { Aptos, AptosConfig, Network } from "@aptos-labs/ts-sdk";
 
 const SHELBY_RPC = "https://api.shelbynet.shelby.xyz/v1";
 const apiKey = process.env.NEXT_PUBLIC_SHELBY_API_KEY || "";
@@ -66,7 +66,7 @@ function CustomWalletButton() {
 }
 
 function AppContent() {
-  const { account, connected, signAndSubmitTransaction } = useWallet();
+  const { account, connected, wallet } = useWallet();
 
   const [activeTab, setActiveTab] = useState<"trade" | "faucet" | "staking" | "storage">("trade");
   const [payToken, setPayToken] = useState<"ShelbyUSD" | "APT">("ShelbyUSD");
@@ -127,6 +127,31 @@ function AppContent() {
     setReceiveAmount((parseFloat(payAmount || "0") * rate).toFixed(4));
   };
 
+  // Helper thực thi transaction bypass qua Wallet Standard
+  const executeTransactionWithStandard = async (payloadData: any) => {
+    if (!wallet) throw new Error("Chưa kết nối ví!");
+
+    // Cách 1: Gọi qua feature aptos:signAndSubmitTransaction của Aptos Standard AIP-62
+    const adapterWallet = wallet as any;
+    const signAndSubmitFeature = adapterWallet?.features?.["aptos:signAndSubmitTransaction"] 
+      || adapterWallet?.adapter?.provider?.features?.["aptos:signAndSubmitTransaction"];
+
+    if (signAndSubmitFeature?.signAndSubmitTransaction) {
+      const response = await signAndSubmitFeature.signAndSubmitTransaction({
+        payload: payloadData
+      });
+      return response;
+    }
+
+    // Cách 2: Trực tiếp qua provider tích hợp của Standard Wallet
+    const provider = adapterWallet?.adapter?.provider || adapterWallet?.provider;
+    if (provider && typeof provider.signAndSubmitTransaction === "function") {
+      return await provider.signAndSubmitTransaction(payloadData);
+    }
+
+    throw new Error("Ví hiện tại không hỗ trợ Wallet Standard API.");
+  };
+
   const handleExecuteTrade = async () => {
     if (!connected || !userAddress) {
       alert("Vui lòng kết nối Petra Wallet trước!");
@@ -147,20 +172,17 @@ function AppContent() {
     try {
       const amountInOctas = Math.floor(amountToUse * 100_000_000);
 
-      // Định dạng payload chuẩn Aptos Standard AIP-62 (kiểu InputTransactionData)
-      const transaction: InputTransactionData = {
-        data: {
-          function: "0x1::aptos_account::transfer",
-          typeArguments: [],
-          functionArguments: [userAddress, amountInOctas],
-        },
+      const payload = {
+        function: "0x1::aptos_account::transfer",
+        typeArguments: [],
+        functionArguments: [userAddress, amountInOctas],
       };
 
-      // Gửi qua Adapter tiêu chuẩn
-      const response = await signAndSubmitTransaction(transaction);
+      const response = await executeTransactionWithStandard(payload);
 
-      if (response?.hash) {
-        setTxHash(response.hash);
+      const hash = response?.hash || response?.args?.hash;
+      if (hash) {
+        setTxHash(hash);
         setStatusMessage(`Swap ${payToken} thành công trên Mạng Shelbynet!`);
         setIsError(false);
         fetchBalance(userAddress);
@@ -226,16 +248,15 @@ function AppContent() {
         blobSize: commitments.raw_data_size,
       });
 
-      const transaction: InputTransactionData = {
-        data: {
-          function: rawPayload.function || rawPayload.payload?.function,
-          typeArguments: rawPayload.type_arguments || rawPayload.payload?.typeArguments || [],
-          functionArguments: rawPayload.arguments || rawPayload.payload?.functionArguments || [],
-        },
+      const payloadData = {
+        function: rawPayload.function || rawPayload.payload?.function,
+        typeArguments: rawPayload.type_arguments || rawPayload.payload?.typeArguments || [],
+        functionArguments: rawPayload.arguments || rawPayload.payload?.functionArguments || [],
       };
 
-      const response = await signAndSubmitTransaction(transaction);
-      setTxHash(response?.hash);
+      const response = await executeTransactionWithStandard(payloadData);
+      const hash = response?.hash || response?.args?.hash;
+      setTxHash(hash);
 
       setStatusMessage("Bước 3/3: Tải dữ liệu Blob lên Shelby RPC Storage...");
       await shelbyClient.rpc.putBlob({
