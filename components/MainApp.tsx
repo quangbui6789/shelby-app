@@ -6,7 +6,6 @@ import {
   CheckCircle, Droplet, RefreshCw, AlertCircle, Coins, Upload, Wallet, LogOut
 } from "lucide-react";
 import { 
-  AptosWalletAdapterProvider, 
   useWallet 
 } from "@aptos-labs/wallet-adapter-react";
 
@@ -133,13 +132,25 @@ function AppContent() {
     try {
       const amountInOctas = Math.floor(amountToUse * 100_000_000);
 
-      const response: any = await signAndSubmitTransaction({
-        data: {
-          function: "0x1::aptos_account::transfer",
-          typeArguments: [],
-          functionArguments: [userAddress, amountInOctas.toString()],
-        }
-      } as any);
+      const payload = {
+        type: "entry_function_payload",
+        function: "0x1::aptos_account::transfer",
+        type_arguments: [],
+        arguments: [userAddress, amountInOctas.toString()],
+      };
+
+      let response: any;
+      if (typeof window !== "undefined" && (window as any).aptos) {
+        response = await (window as any).aptos.signAndSubmitTransaction(payload);
+      } else {
+        response = await signAndSubmitTransaction({
+          data: {
+            function: "0x1::aptos_account::transfer",
+            typeArguments: [],
+            functionArguments: [userAddress, amountInOctas.toString()],
+          }
+        } as any);
+      }
 
       if (response?.hash) {
         setTxHash(response.hash);
@@ -208,13 +219,25 @@ function AppContent() {
         blobSize: commitments.raw_data_size,
       });
 
-      const response: any = await signAndSubmitTransaction({
-        data: {
-          function: rawPayload.function || rawPayload.payload?.function,
-          typeArguments: rawPayload.type_arguments || rawPayload.payload?.typeArguments || [],
-          functionArguments: rawPayload.arguments || rawPayload.payload?.functionArguments || [],
-        }
-      } as any);
+      let response: any;
+      const payloadData = {
+        type: "entry_function_payload",
+        function: rawPayload.function || rawPayload.payload?.function,
+        type_arguments: rawPayload.type_arguments || rawPayload.payload?.typeArguments || [],
+        arguments: rawPayload.arguments || rawPayload.payload?.functionArguments || [],
+      };
+
+      if (typeof window !== "undefined" && (window as any).aptos) {
+        response = await (window as any).aptos.signAndSubmitTransaction(payloadData);
+      } else {
+        response = await signAndSubmitTransaction({
+          data: {
+            function: payloadData.function,
+            typeArguments: payloadData.type_arguments,
+            functionArguments: payloadData.arguments,
+          }
+        } as any);
+      }
 
       setTxHash(response?.hash);
 
@@ -438,9 +461,5 @@ function AppContent() {
 }
 
 export default function MainApp() {
-  return (
-    <AptosWalletAdapterProvider autoConnect={true}>
-      <AppContent />
-    </AptosWalletAdapterProvider>
-  );
+  return <AppContent />;
 }
