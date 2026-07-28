@@ -13,9 +13,10 @@ import { Aptos, AptosConfig, Network } from "@aptos-labs/ts-sdk";
 const SHELBY_RPC = "https://api.shelbynet.shelby.xyz/v1";
 const apiKey = process.env.NEXT_PUBLIC_SHELBY_API_KEY || "";
 
+// Dùng Network.TESTNET thay vì Network.CUSTOM để Wallet Adapter không throw "Invalid network"
 const aptosClient = new Aptos(
   new AptosConfig({
-    network: Network.CUSTOM,
+    network: Network.TESTNET,
     fullnode: SHELBY_RPC,
   })
 );
@@ -66,8 +67,7 @@ function CustomWalletButton() {
 }
 
 function AppContent() {
-  // Sử dụng trực tiếp signAndSubmitTransaction và signTransaction từ Adapter hook (AIP-62)
-  const { account, connected, signAndSubmitTransaction, signTransaction } = useWallet();
+  const { account, connected, signAndSubmitTransaction } = useWallet();
 
   const [activeTab, setActiveTab] = useState<"trade" | "faucet" | "staking" | "storage">("trade");
   const [payToken, setPayToken] = useState<"ShelbyUSD" | "APT">("ShelbyUSD");
@@ -128,7 +128,7 @@ function AppContent() {
     setReceiveAmount((parseFloat(payAmount || "0") * rate).toFixed(4));
   };
 
-  // Hàm thực thi transaction dùng Wallet Standard AIP-62
+  // Hàm ký và gửi Transaction tương thích cả Standard Feature và Adapter Hook
   const executeTransactionWithStandard = async (payloadData: {
     function: string;
     typeArguments?: string[];
@@ -138,7 +138,21 @@ function AppContent() {
       throw new Error("Chưa kết nối ví Petra!");
     }
 
-    // Cấu trúc transaction chuẩn Aptos SDK v2 / AIP-62
+    // 1. Thử gọi trực tiếp qua Wallet Standard Feature từ window.aptos (bỏ qua Adapter check network)
+    const standardWallet = (window as any).aptos;
+    const signAndSubmitFeature = standardWallet?.features?.["aptos:signAndSubmitTransaction"]?.signAndSubmitTransaction;
+
+    if (signAndSubmitFeature) {
+      return await signAndSubmitFeature({
+        payload: {
+          function: payloadData.function,
+          type_arguments: payloadData.typeArguments || [],
+          arguments: payloadData.functionArguments || [],
+        }
+      });
+    }
+
+    // 2. Fallback qua hook signAndSubmitTransaction
     const transactionData = {
       data: {
         function: payloadData.function as `${string}::${string}::${string}`,
@@ -147,29 +161,7 @@ function AppContent() {
       }
     };
 
-    try {
-      // 1. Thử gửi qua signAndSubmitTransaction của Adapter hook
-      const response = await signAndSubmitTransaction(transactionData as any);
-      return response;
-    } catch (err: any) {
-      console.warn("signAndSubmitTransaction fallback strategy:", err);
-      
-      // 2. Fallback nếu dùng AIP-62 Standard Feature trực tiếp từ window.aptos (Không dùng window.petra)
-      const standardWallet = (window as any).aptos;
-      const signAndSubmitFeature = standardWallet?.features?.["aptos:signAndSubmitTransaction"]?.signAndSubmitTransaction;
-      
-      if (signAndSubmitFeature) {
-        return await signAndSubmitFeature({
-          payload: {
-            function: payloadData.function,
-            type_arguments: payloadData.typeArguments || [],
-            arguments: payloadData.functionArguments || [],
-          }
-        });
-      }
-
-      throw err;
-    }
+    return await signAndSubmitTransaction(transactionData as any);
   };
 
   const handleExecuteTrade = async () => {
