@@ -66,7 +66,7 @@ function CustomWalletButton() {
 }
 
 function AppContent() {
-  const { account, connected, wallet } = useWallet();
+  const { account, connected, wallet, signAndSubmitTransaction } = useWallet();
 
   const [activeTab, setActiveTab] = useState<"trade" | "faucet" | "staking" | "storage">("trade");
   const [payToken, setPayToken] = useState<"ShelbyUSD" | "APT">("ShelbyUSD");
@@ -127,31 +127,23 @@ function AppContent() {
     setReceiveAmount((parseFloat(payAmount || "0") * rate).toFixed(4));
   };
 
-  // Helper thực thi transaction bypass qua window.aptos gốc
-  const executeTransactionWithStandard = async (payloadData: any) => {
-    // 1. Ưu tiên gọi trực tiếp window.aptos (Petra extension)
-    const petraProvider = (window as any).aptos || (window as any).petra;
+  // Helper thực thi giao dịch chuẩn AIP-62
+  const executeTransactionWithStandard = async (payloadData: {
+    function: string;
+    typeArguments?: string[];
+    functionArguments: any[];
+  }) => {
+    if (!wallet) throw new Error("Chưa kết nối ví!");
 
-    if (petraProvider && typeof petraProvider.signAndSubmitTransaction === "function") {
-      const directPayload = {
-        function: payloadData.function,
-        type_arguments: payloadData.typeArguments || payloadData.type_arguments || [],
-        arguments: payloadData.functionArguments || payloadData.arguments || [],
-      };
+    const transactionInput: any = {
+      data: {
+        function: payloadData.function as `${string}::${string}::${string}`,
+        typeArguments: payloadData.typeArguments || [],
+        functionArguments: payloadData.functionArguments || [],
+      }
+    };
 
-      return await petraProvider.signAndSubmitTransaction(directPayload);
-    }
-
-    // 2. Fallback nếu không có window.aptos
-    const adapterWallet = wallet as any;
-    const signAndSubmitFeature = adapterWallet?.features?.["aptos:signAndSubmitTransaction"] 
-      || adapterWallet?.adapter?.provider?.features?.["aptos:signAndSubmitTransaction"];
-
-    if (signAndSubmitFeature?.signAndSubmitTransaction) {
-      return await signAndSubmitFeature.signAndSubmitTransaction({ payload: payloadData });
-    }
-
-    throw new Error("Không tìm thấy ví Petra! Vui lòng kiểm tra extension Petra trên trình duyệt.");
+    return await signAndSubmitTransaction(transactionInput);
   };
 
   const handleExecuteTrade = async () => {
@@ -182,7 +174,7 @@ function AppContent() {
 
       const response = await executeTransactionWithStandard(payload);
 
-      const hash = response?.hash || response?.args?.hash;
+      const hash = response?.hash;
       if (hash) {
         setTxHash(hash);
         setStatusMessage(`Swap ${payToken} thành công trên Mạng Shelbynet!`);
@@ -257,7 +249,7 @@ function AppContent() {
       };
 
       const response = await executeTransactionWithStandard(payloadData);
-      const hash = response?.hash || response?.args?.hash;
+      const hash = response?.hash;
       setTxHash(hash);
 
       setStatusMessage("Bước 3/3: Tải dữ liệu Blob lên Shelby RPC Storage...");
