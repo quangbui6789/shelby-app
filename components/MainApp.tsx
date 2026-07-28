@@ -127,29 +127,31 @@ function AppContent() {
     setReceiveAmount((parseFloat(payAmount || "0") * rate).toFixed(4));
   };
 
-  // Helper thực thi transaction bypass qua Wallet Standard
+  // Helper thực thi transaction bypass qua window.aptos gốc
   const executeTransactionWithStandard = async (payloadData: any) => {
-    if (!wallet) throw new Error("Chưa kết nối ví!");
+    // 1. Ưu tiên gọi trực tiếp window.aptos (Petra extension)
+    const petraProvider = (window as any).aptos || (window as any).petra;
 
-    // Cách 1: Gọi qua feature aptos:signAndSubmitTransaction của Aptos Standard AIP-62
+    if (petraProvider && typeof petraProvider.signAndSubmitTransaction === "function") {
+      const directPayload = {
+        function: payloadData.function,
+        type_arguments: payloadData.typeArguments || payloadData.type_arguments || [],
+        arguments: payloadData.functionArguments || payloadData.arguments || [],
+      };
+
+      return await petraProvider.signAndSubmitTransaction(directPayload);
+    }
+
+    // 2. Fallback nếu không có window.aptos
     const adapterWallet = wallet as any;
     const signAndSubmitFeature = adapterWallet?.features?.["aptos:signAndSubmitTransaction"] 
       || adapterWallet?.adapter?.provider?.features?.["aptos:signAndSubmitTransaction"];
 
     if (signAndSubmitFeature?.signAndSubmitTransaction) {
-      const response = await signAndSubmitFeature.signAndSubmitTransaction({
-        payload: payloadData
-      });
-      return response;
+      return await signAndSubmitFeature.signAndSubmitTransaction({ payload: payloadData });
     }
 
-    // Cách 2: Trực tiếp qua provider tích hợp của Standard Wallet
-    const provider = adapterWallet?.adapter?.provider || adapterWallet?.provider;
-    if (provider && typeof provider.signAndSubmitTransaction === "function") {
-      return await provider.signAndSubmitTransaction(payloadData);
-    }
-
-    throw new Error("Ví hiện tại không hỗ trợ Wallet Standard API.");
+    throw new Error("Không tìm thấy ví Petra! Vui lòng kiểm tra extension Petra trên trình duyệt.");
   };
 
   const handleExecuteTrade = async () => {
