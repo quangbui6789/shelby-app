@@ -5,6 +5,7 @@ import {
   Zap, ArrowLeftRight, Database, TrendingUp, 
   CheckCircle, Droplet, RefreshCw, AlertCircle, Coins, Upload, Wallet, LogOut, ArrowUpDown
 } from "lucide-react";
+import { useWallet } from "@aptos-labs/wallet-adapter-react";
 import { Aptos, AptosConfig, Network } from "@aptos-labs/ts-sdk";
 
 const SHELBY_RPC = "https://api.shelbynet.shelby.xyz/v1";
@@ -12,18 +13,65 @@ const apiKey = process.env.NEXT_PUBLIC_SHELBY_API_KEY || "";
 
 const aptosClient = new Aptos(
   new AptosConfig({
-    network: Network.TESTNET,
+    network: Network.CUSTOM,
     fullnode: SHELBY_RPC,
   })
 );
 
-export default function MainApp() {
+function CustomWalletButton() {
+  const { connect, disconnect, connected, account, wallets } = useWallet();
+
+  if (connected && account) {
+    const addr = account.address.toString();
+    const shortAddr = `${addr.slice(0, 6)}...${addr.slice(-4)}`;
+    return (
+      <button 
+        onClick={() => disconnect()}
+        className="flex items-center gap-2 bg-slate-800 hover:bg-slate-700 text-teal-400 border border-teal-500/30 px-4 py-2 rounded-xl text-xs font-semibold transition"
+      >
+        <Wallet className="h-4 w-4 text-teal-400" />
+        <span>{shortAddr}</span>
+        <LogOut className="h-3.5 w-3.5 text-slate-400 ml-1" />
+      </button>
+    );
+  }
+
+  const handleConnect = async () => {
+    const petraWallet = wallets?.find(
+      (w) => w.name.toLowerCase().includes("petra")
+    ) || wallets?.[0];
+
+    if (petraWallet) {
+      try {
+        await connect(petraWallet.name);
+      } catch (err: any) {
+        console.error("Connect wallet error:", err);
+        alert("Kết nối ví thất bại: " + (err?.message || err));
+      }
+    } else {
+      alert("Không tìm thấy ví Petra! Vui lòng cài đặt Petra Aptos Wallet extension.");
+    }
+  };
+
+  return (
+    <button
+      onClick={handleConnect}
+      className="flex items-center gap-2 bg-teal-500 hover:bg-teal-400 text-slate-950 font-bold px-4 py-2.5 rounded-xl text-xs transition shadow-lg shadow-teal-500/20"
+    >
+      <Wallet className="h-4 w-4" />
+      <span>Connect Petra Wallet</span>
+    </button>
+  );
+}
+
+function AppContent() {
+  const { account, connected, signAndSubmitTransaction } = useWallet();
+
   const [activeTab, setActiveTab] = useState<"trade" | "faucet" | "staking" | "storage">("trade");
   const [payToken, setPayToken] = useState<"ShelbyUSD" | "APT">("ShelbyUSD");
   const [payAmount, setPayAmount] = useState("0.001");
   const [receiveAmount, setReceiveAmount] = useState("0.0015");
 
-  const [accountAddress, setAccountAddress] = useState<string | null>(null);
   const [aptBalance, setAptBalance] = useState<string>("0");
   const [shelbyBalance, setShelbyBalance] = useState<string>("0");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -33,29 +81,7 @@ export default function MainApp() {
   const [isError, setIsError] = useState(false);
   const [txHash, setTxHash] = useState<string | null>(null);
 
-  // Kết nối trực tiếp ví Petra
-  const connectPetraWallet = async () => {
-    const petra = (window as any).aptos;
-    if (!petra) {
-      alert("Chưa cài đặt Petra Wallet Extension!");
-      return;
-    }
-    try {
-      const response = await petra.connect();
-      setAccountAddress(response.address);
-    } catch (err: any) {
-      console.error("Connect error:", err);
-      alert("Kết nối ví thất bại: " + err.message);
-    }
-  };
-
-  const disconnectPetraWallet = async () => {
-    const petra = (window as any).aptos;
-    if (petra) {
-      await petra.disconnect();
-    }
-    setAccountAddress(null);
-  };
+  const userAddress = account?.address ? account.address.toString() : null;
 
   const fetchBalance = useCallback(async (addrStr: string) => {
     if (!addrStr) return;
@@ -88,12 +114,11 @@ export default function MainApp() {
   }, []);
 
   useEffect(() => {
-    if (accountAddress) {
-      fetchBalance(accountAddress);
+    if (connected && userAddress) {
+      fetchBalance(userAddress);
     }
-  }, [accountAddress, fetchBalance]);
+  }, [connected, userAddress, fetchBalance]);
 
-  // Đổi chiều Swap
   const handleSwitchDirection = () => {
     const nextPayToken = payToken === "ShelbyUSD" ? "APT" : "ShelbyUSD";
     setPayToken(nextPayToken);
@@ -101,20 +126,8 @@ export default function MainApp() {
     setReceiveAmount((parseFloat(payAmount || "0") * rate).toFixed(4));
   };
 
-  // Ký giao dịch trực tiếp bằng window.aptos (loại bỏ hoàn toàn Adapter validation)
-  const signAndSubmitDirectly = async (payload: any) => {
-    const petra = (window as any).aptos;
-    if (!petra) {
-      throw new Error("Chưa cài đặt Petra Wallet!");
-    }
-
-    // Gọi API Native của Petra Wallet Extension
-    const response = await petra.signAndSubmitTransaction(payload);
-    return response;
-  };
-
   const handleExecuteTrade = async () => {
-    if (!accountAddress) {
+    if (!connected || !userAddress) {
       alert("Vui lòng kết nối Petra Wallet trước!");
       return;
     }
@@ -133,20 +146,20 @@ export default function MainApp() {
     try {
       const amountInOctas = Math.floor(amountToUse * 100_000_000);
 
-      const payload = {
-        arguments: [accountAddress, amountInOctas],
-        function: "0x1::aptos_account::transfer",
-        type_arguments: [],
-      };
+      const response = await signAndSubmitTransaction({
+        data: {
+          function: "0x1::aptos_account::transfer",
+          typeArguments: [],
+          functionArguments: [userAddress, amountInOctas],
+        }
+      });
 
-      const response = await signAndSubmitDirectly(payload);
-
-      const hash = typeof response === "string" ? response : (response?.hash || response?.transactionHash);
+      const hash = typeof response === "string" ? response : (response?.hash || (response as any)?.transactionHash);
       if (hash) {
         setTxHash(hash);
         setStatusMessage(`Swap ${payToken} thành công trên Mạng Shelbynet!`);
         setIsError(false);
-        fetchBalance(accountAddress);
+        fetchBalance(userAddress);
       } else {
         throw new Error("Không nhận được Hash giao dịch.");
       }
@@ -165,7 +178,7 @@ export default function MainApp() {
   };
 
   const handleUploadStorage = async () => {
-    if (!accountAddress) {
+    if (!connected || !userAddress) {
       alert("Vui lòng kết nối Petra Wallet!");
       return;
     }
@@ -198,7 +211,7 @@ export default function MainApp() {
 
       setStatusMessage("Bước 2/3: Đăng ký Metadata lên Mạng Shelby...");
       const expirationMicros = (1000 * 60 * 60 * 24 * 30 + Date.now()) * 1000;
-      const userAccountAddress = aptosSdk.AccountAddress.from(accountAddress);
+      const userAccountAddress = aptosSdk.AccountAddress.from(userAddress);
 
       const rawPayload: any = shelbySdk.ShelbyBlobClient.createRegisterBlobPayload({
         account: userAccountAddress,
@@ -209,14 +222,15 @@ export default function MainApp() {
         blobSize: commitments.raw_data_size,
       });
 
-      const payload = {
-        function: rawPayload.function || rawPayload.payload?.function,
-        type_arguments: rawPayload.type_arguments || rawPayload.payload?.typeArguments || [],
-        arguments: rawPayload.arguments || rawPayload.payload?.functionArguments || [],
-      };
+      const response = await signAndSubmitTransaction({
+        data: {
+          function: (rawPayload.function || rawPayload.payload?.function) as `${string}::${string}::${string}`,
+          typeArguments: rawPayload.type_arguments || rawPayload.payload?.typeArguments || [],
+          functionArguments: rawPayload.arguments || rawPayload.payload?.functionArguments || [],
+        }
+      });
 
-      const response = await signAndSubmitDirectly(payload);
-      const hash = typeof response === "string" ? response : (response?.hash || response?.transactionHash);
+      const hash = typeof response === "string" ? response : (response?.hash || (response as any)?.transactionHash);
       setTxHash(hash);
 
       setStatusMessage("Bước 3/3: Tải dữ liệu Blob lên Shelby RPC Storage...");
@@ -251,7 +265,7 @@ export default function MainApp() {
         </div>
 
         <div className="flex items-center gap-3">
-          {accountAddress && (
+          {connected && (
             <div className="flex items-center gap-4 bg-slate-900 border border-slate-800 px-4 py-2 rounded-xl text-xs font-semibold">
               <div className="flex items-center gap-1.5">
                 <Coins className="h-4 w-4 text-teal-400" />
@@ -263,24 +277,7 @@ export default function MainApp() {
             </div>
           )}
 
-          {accountAddress ? (
-            <button 
-              onClick={disconnectPetraWallet}
-              className="flex items-center gap-2 bg-slate-800 hover:bg-slate-700 text-teal-400 border border-teal-500/30 px-4 py-2 rounded-xl text-xs font-semibold transition"
-            >
-              <Wallet className="h-4 w-4 text-teal-400" />
-              <span>{`${accountAddress.slice(0, 6)}...${accountAddress.slice(-4)}`}</span>
-              <LogOut className="h-3.5 w-3.5 text-slate-400 ml-1" />
-            </button>
-          ) : (
-            <button
-              onClick={connectPetraWallet}
-              className="flex items-center gap-2 bg-teal-500 hover:bg-teal-400 text-slate-950 font-bold px-4 py-2.5 rounded-xl text-xs transition shadow-lg shadow-teal-500/20"
-            >
-              <Wallet className="h-4 w-4" />
-              <span>Connect Petra Wallet</span>
-            </button>
-          )}
+          <CustomWalletButton />
         </div>
       </header>
 
@@ -332,7 +329,7 @@ export default function MainApp() {
               <div className="flex justify-between text-xs text-slate-400 mb-2">
                 <span>You Pay</span>
                 <span className="text-teal-400 font-mono">
-                  Balance: {accountAddress ? (payToken === "ShelbyUSD" ? `${shelbyBalance} ShelbyUSD` : `${aptBalance} APT`) : "Not Connected"}
+                  Balance: {connected ? (payToken === "ShelbyUSD" ? `${shelbyBalance} ShelbyUSD` : `${aptBalance} APT`) : "Not Connected"}
                 </span>
               </div>
               <div className="flex items-center justify-between gap-2">
@@ -469,4 +466,8 @@ export default function MainApp() {
       </footer>
     </div>
   );
+}
+
+export default function MainApp() {
+  return <AppContent />;
 }
