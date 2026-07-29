@@ -174,7 +174,10 @@ function AppContent() {
       console.error("Trade Error:", error);
       setIsError(true);
       const msg = error?.message || error?.toString() || "";
-      if (msg.includes("rejected") || error?.code === 4001) {
+      
+      if (msg.includes("Network not supported")) {
+        setStatusMessage("Lỗi mạng: Ví Petra chưa chọn/thêm Custom Node Shelbynet (https://api.shelbynet.shelby.xyz/v1).");
+      } else if (msg.includes("rejected") || error?.code === 4001) {
         setStatusMessage("Giao dịch bị hủy: Người dùng từ chối yêu cầu.");
       } else {
         setStatusMessage(`Lỗi Shelbynet: ${msg || "Giao dịch thất bại."}`);
@@ -251,7 +254,12 @@ function AppContent() {
     } catch (error: any) {
       console.error("Storage Upload Error:", error);
       setIsError(true);
-      setStatusMessage(`Upload thất bại: ${error?.message || "Lỗi xử lý lưu trữ."}`);
+      const msg = error?.message || error?.toString() || "";
+      if (msg.includes("Network not supported")) {
+        setStatusMessage("Lỗi mạng: Ví Petra chưa chuyển sang mạng Shelbynet.");
+      } else {
+        setStatusMessage(`Upload thất bại: ${msg || "Lỗi xử lý lưu trữ."}`);
+      }
     } finally {
       setIsProcessing(false);
     }
