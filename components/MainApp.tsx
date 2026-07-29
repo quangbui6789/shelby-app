@@ -25,12 +25,12 @@ import { Aptos, AptosConfig, Network, AccountAddress } from "@aptos-labs/ts-sdk"
 const SHELBY_RPC = "https://api.shelbynet.shelby.xyz/v1";
 const apiKey = process.env.NEXT_PUBLIC_SHELBY_API_KEY || "";
 
-// Khởi tạo Aptos Client an toàn
+// Khởi tạo Aptos Client dùng Network.TESTNET thay vì Network.CUSTOM
 let aptosClient: Aptos;
 try {
   aptosClient = new Aptos(
     new AptosConfig({
-      network: Network.CUSTOM,
+      network: Network.TESTNET,
       fullnode: SHELBY_RPC,
     })
   );
@@ -172,7 +172,6 @@ function AppContent() {
     try {
       const amountInOctas = Math.floor(amountToUse * 100_000_000);
 
-      // Cấu trúc data đúng chuẩn Wallet Adapter mới: { data: { function, functionArguments } }
       const response: any = await signAndSubmitTransaction({
         data: {
           function: "0x1::aptos_account::transfer",
@@ -280,7 +279,6 @@ function AppContent() {
 
   return (
     <div className="flex min-h-screen flex-col justify-between p-4 md:p-10 max-w-7xl mx-auto text-white">
-      {/* Header */}
       <header className="flex items-center justify-between border-b border-slate-800 pb-6">
         <div className="flex items-center gap-3">
           <div className="bg-teal-500 p-2.5 rounded-2xl text-slate-950 shadow-lg shadow-teal-500/20">
@@ -309,7 +307,6 @@ function AppContent() {
         </div>
       </header>
 
-      {/* Alert Banner */}
       {statusMessage && (
         <div className={`mt-6 p-4 rounded-2xl border text-sm transition-all ${
           isError ? "bg-rose-950/40 border-rose-500/40 text-rose-300" : "bg-slate-900 border-teal-500/30 text-teal-300"
@@ -339,7 +336,6 @@ function AppContent() {
         </div>
       )}
 
-      {/* Navigation Tabs & Main UI */}
       <main className="my-8 flex flex-col items-center">
         <div className="flex flex-wrap justify-center bg-slate-900 border border-slate-800 p-1.5 rounded-2xl mb-8 gap-1 shadow-inner">
           <button 
@@ -376,7 +372,6 @@ function AppContent() {
           </button>
         </div>
 
-        {/* Tab 1: Trade / Swap */}
         {activeTab === "trade" && (
           <div className="w-full max-w-md p-6 rounded-3xl bg-slate-900 border border-slate-800 shadow-2xl relative">
             <div className="flex justify-between items-center mb-5">
@@ -389,7 +384,6 @@ function AppContent() {
               </span>
             </div>
 
-            {/* Pay Section */}
             <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800/80 mb-2">
               <div className="flex justify-between text-xs text-slate-400 mb-2">
                 <span>You Pay</span>
@@ -418,7 +412,6 @@ function AppContent() {
               </div>
             </div>
 
-            {/* Switch Button */}
             <div className="flex justify-center -my-3 z-10 relative">
               <button 
                 onClick={handleSwitchDirection}
@@ -429,7 +422,6 @@ function AppContent() {
               </button>
             </div>
 
-            {/* Receive Section */}
             <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800/80 mb-6">
               <div className="flex justify-between text-xs text-slate-400 mb-2">
                 <span>You Receive (Estimated)</span>
@@ -461,7 +453,6 @@ function AppContent() {
           </div>
         )}
 
-        {/* Tab 2: Faucet */}
         {activeTab === "faucet" && (
           <div className="w-full max-w-md p-6 rounded-3xl bg-slate-900 border border-slate-800 text-center shadow-2xl">
             <div className="bg-teal-500/10 p-4 rounded-full w-16 h-16 mx-auto mb-4 flex items-center justify-center border border-teal-500/30">
@@ -489,7 +480,6 @@ function AppContent() {
           </div>
         )}
 
-        {/* Tab 3: Staking */}
         {activeTab === "staking" && (
           <div className="w-full max-w-2xl grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="p-6 rounded-3xl bg-slate-900 border border-slate-800 relative overflow-hidden">
@@ -534,7 +524,6 @@ function AppContent() {
           </div>
         )}
 
-        {/* Tab 4: Storage Vault */}
         {activeTab === "storage" && (
           <div className="w-full max-w-md p-6 rounded-3xl bg-slate-900 border border-slate-800 text-center shadow-2xl">
             <div className="bg-teal-500/10 p-4 rounded-full w-16 h-16 mx-auto mb-3 flex items-center justify-center border border-teal-500/30">
@@ -567,7 +556,6 @@ function AppContent() {
         )}
       </main>
 
-      {/* Footer */}
       <footer className="border-t border-slate-800 pt-6 flex justify-between items-center text-xs text-slate-500 font-mono">
         <p>© 2026 Shelby Protocol. All rights reserved.</p>
         <div className="flex items-center gap-4">
