@@ -13,7 +13,10 @@ export default function Providers({ children }: { children: React.ReactNode }) {
       optInWallets={["Petra"]}
       dappConfig={{
         network: Network.CUSTOM,
-        customNetwork: SHELBY_RPC,
+        aptosConfig: {
+          network: Network.CUSTOM,
+          fullnode: SHELBY_RPC,
+        },
       }}
     >
       {children}
