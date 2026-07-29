@@ -25,7 +25,7 @@ import { Aptos, AptosConfig, Network, AccountAddress } from "@aptos-labs/ts-sdk"
 const SHELBY_RPC = "https://api.shelbynet.shelby.xyz/v1";
 const apiKey = process.env.NEXT_PUBLIC_SHELBY_API_KEY || "";
 
-// Khởi tạo Aptos Client
+// Khởi tạo Aptos Client an toàn
 let aptosClient: Aptos;
 try {
   aptosClient = new Aptos(
@@ -172,16 +172,13 @@ function AppContent() {
     try {
       const amountInOctas = Math.floor(amountToUse * 100_000_000);
 
-      // Payload định dạng entry_function_payload chuẩn Petra Wallet Extension
-      const transactionPayload = {
-        type: "entry_function_payload",
-        function: "0x1::aptos_account::transfer",
-        type_arguments: [],
-        arguments: [userAddress, amountInOctas.toString()],
-      };
-
+      // Cấu trúc data đúng chuẩn Wallet Adapter mới: { data: { function, functionArguments } }
       const response: any = await signAndSubmitTransaction({
-        payload: transactionPayload as any,
+        data: {
+          function: "0x1::aptos_account::transfer",
+          typeArguments: [],
+          functionArguments: [userAddress, amountInOctas],
+        },
       });
 
       const hash = typeof response === "string" ? response : (response?.hash || response?.transactionHash);
@@ -253,12 +250,11 @@ function AppContent() {
       });
 
       const response: any = await signAndSubmitTransaction({
-        payload: {
-          type: "entry_function_payload",
+        data: {
           function: rawPayload.function || rawPayload.payload?.function,
-          type_arguments: rawPayload.type_arguments || rawPayload.payload?.typeArguments || [],
-          arguments: rawPayload.arguments || rawPayload.payload?.functionArguments || [],
-        } as any,
+          typeArguments: rawPayload.type_arguments || rawPayload.payload?.typeArguments || [],
+          functionArguments: rawPayload.arguments || rawPayload.payload?.functionArguments || [],
+        },
       });
 
       const hash = typeof response === "string" ? response : (response?.hash || response?.transactionHash);
