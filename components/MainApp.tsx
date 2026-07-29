@@ -25,7 +25,7 @@ import { Aptos, AptosConfig, Network, AccountAddress } from "@aptos-labs/ts-sdk"
 const SHELBY_RPC = "https://api.shelbynet.shelby.xyz/v1";
 const apiKey = process.env.NEXT_PUBLIC_SHELBY_API_KEY || "";
 
-// Khởi tạo Aptos Client an toàn
+// Khởi tạo Aptos Client
 let aptosClient: Aptos;
 try {
   aptosClient = new Aptos(
@@ -172,15 +172,19 @@ function AppContent() {
     try {
       const amountInOctas = Math.floor(amountToUse * 100_000_000);
 
-      const response = await signAndSubmitTransaction({
-        data: {
-          function: "0x1::aptos_account::transfer",
-          typeArguments: [],
-          functionArguments: [userAddress, amountInOctas],
-        }
+      // Payload định dạng entry_function_payload chuẩn Petra Wallet Extension
+      const transactionPayload = {
+        type: "entry_function_payload",
+        function: "0x1::aptos_account::transfer",
+        type_arguments: [],
+        arguments: [userAddress, amountInOctas.toString()],
+      };
+
+      const response: any = await signAndSubmitTransaction({
+        payload: transactionPayload as any,
       });
 
-      const hash = typeof response === "string" ? response : (response?.hash || (response as any)?.transactionHash);
+      const hash = typeof response === "string" ? response : (response?.hash || response?.transactionHash);
       if (hash) {
         setTxHash(hash);
         setStatusMessage(`Swap ${payToken} thành công trên Mạng Shelbynet!`);
@@ -194,10 +198,8 @@ function AppContent() {
       setIsError(true);
       const msg = error?.message || error?.toString() || "";
       
-      if (msg.toLowerCase().includes("network")) {
-        setStatusMessage("Lỗi Mạng Ví: Mở ví Petra > Settings > Network và chọn Custom Node (https://api.shelbynet.shelby.xyz/v1).");
-      } else if (msg.includes("rejected") || error?.code === 4001) {
-        setStatusMessage("Giao dịch bị hủy: Người dùng từ chối yêu cầu.");
+      if (msg.includes("rejected") || error?.code === 4001) {
+        setStatusMessage("Giao dịch bị hủy: Người dùng từ chối xác nhận trên ví.");
       } else {
         setStatusMessage(`Lỗi giao dịch: ${msg || "Không thể thực hiện Swap."}`);
       }
@@ -250,15 +252,16 @@ function AppContent() {
         blobSize: commitments.raw_data_size,
       });
 
-      const response = await signAndSubmitTransaction({
-        data: {
-          function: (rawPayload.function || rawPayload.payload?.function) as `${string}::${string}::${string}`,
-          typeArguments: rawPayload.type_arguments || rawPayload.payload?.typeArguments || [],
-          functionArguments: rawPayload.arguments || rawPayload.payload?.functionArguments || [],
-        }
+      const response: any = await signAndSubmitTransaction({
+        payload: {
+          type: "entry_function_payload",
+          function: rawPayload.function || rawPayload.payload?.function,
+          type_arguments: rawPayload.type_arguments || rawPayload.payload?.typeArguments || [],
+          arguments: rawPayload.arguments || rawPayload.payload?.functionArguments || [],
+        } as any,
       });
 
-      const hash = typeof response === "string" ? response : (response?.hash || (response as any)?.transactionHash);
+      const hash = typeof response === "string" ? response : (response?.hash || response?.transactionHash);
       setTxHash(hash);
 
       setStatusMessage("Bước 3/3: Tải dữ liệu Blob...");
