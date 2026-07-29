@@ -11,12 +11,18 @@ import { Aptos, AptosConfig, Network, AccountAddress } from "@aptos-labs/ts-sdk"
 const SHELBY_RPC = "https://api.shelbynet.shelby.xyz/v1";
 const apiKey = process.env.NEXT_PUBLIC_SHELBY_API_KEY || "";
 
-const aptosClient = new Aptos(
-  new AptosConfig({
-    network: Network.CUSTOM,
-    fullnode: SHELBY_RPC,
-  })
-);
+// Khởi tạo Aptos Client an toàn
+let aptosClient: Aptos;
+try {
+  aptosClient = new Aptos(
+    new AptosConfig({
+      network: Network.CUSTOM,
+      fullnode: SHELBY_RPC,
+    })
+  );
+} catch (e) {
+  console.warn("Client init fallback", e);
+}
 
 function CustomWalletButton() {
   const { connect, disconnect, connected, account, wallets } = useWallet();
@@ -53,7 +59,6 @@ function CustomWalletButton() {
         await connect(petraWallet.name);
       } catch (err: any) {
         console.error("Connect wallet error:", err);
-        alert("Kết nối ví thất bại: " + (err?.message || err));
       }
     } else {
       alert("Không tìm thấy ví Petra! Vui lòng cài đặt Petra Aptos Wallet extension.");
@@ -91,7 +96,7 @@ function AppContent() {
   const userAddress = account?.address ? account.address.toString() : null;
 
   const fetchBalance = useCallback(async (addrStr: string) => {
-    if (!addrStr) return;
+    if (!addrStr || !aptosClient) return;
     try {
       const aptAmount = await aptosClient.getAccountCoinAmount({
         accountAddress: addrStr,
@@ -175,12 +180,12 @@ function AppContent() {
       setIsError(true);
       const msg = error?.message || error?.toString() || "";
       
-      if (msg.includes("Network not supported")) {
-        setStatusMessage("Lỗi mạng: Ví Petra chưa chọn/thêm Custom Node Shelbynet (https://api.shelbynet.shelby.xyz/v1).");
+      if (msg.includes("Network not supported") || msg.includes("network")) {
+        setStatusMessage("Lỗi Mạng Ví: Hãy đổi mạng trong ví Petra sang Devnet hoặc Custom Node (https://api.shelbynet.shelby.xyz/v1).");
       } else if (msg.includes("rejected") || error?.code === 4001) {
-        setStatusMessage("Giao dịch bị hủy: Người dùng từ chối yêu cầu.");
+        setStatusMessage("Giao dịch bị hủy: Người dùng từ chối.");
       } else {
-        setStatusMessage(`Lỗi Shelbynet: ${msg || "Giao dịch thất bại."}`);
+        setStatusMessage(`Lỗi giao dịch: ${msg || "Không thể thực hiện giao dịch."}`);
       }
     } finally {
       setIsProcessing(false);
@@ -218,7 +223,7 @@ function AppContent() {
       const ecProvider = await shelbySdk.createDefaultErasureCodingProvider();
       const commitments = await shelbySdk.generateCommitments(ecProvider, fileData);
 
-      setStatusMessage("Bước 2/3: Đăng ký Metadata lên Mạng Shelby...");
+      setStatusMessage("Bước 2/3: Đăng ký Metadata...");
       const expirationMicros = (1000 * 60 * 60 * 24 * 30 + Date.now()) * 1000;
       const userAccountAddress = AccountAddress.from(userAddress);
 
@@ -242,7 +247,7 @@ function AppContent() {
       const hash = typeof response === "string" ? response : (response?.hash || (response as any)?.transactionHash);
       setTxHash(hash);
 
-      setStatusMessage("Bước 3/3: Tải dữ liệu Blob lên Shelby RPC Storage...");
+      setStatusMessage("Bước 3/3: Tải dữ liệu Blob...");
       await shelbyClient.rpc.putBlob({
         account: userAccountAddress,
         blobName: selectedFile.name,
@@ -254,12 +259,7 @@ function AppContent() {
     } catch (error: any) {
       console.error("Storage Upload Error:", error);
       setIsError(true);
-      const msg = error?.message || error?.toString() || "";
-      if (msg.includes("Network not supported")) {
-        setStatusMessage("Lỗi mạng: Ví Petra chưa chuyển sang mạng Shelbynet.");
-      } else {
-        setStatusMessage(`Upload thất bại: ${msg || "Lỗi xử lý lưu trữ."}`);
-      }
+      setStatusMessage(`Upload thất bại: ${error?.message || "Lỗi xử lý lưu trữ."}`);
     } finally {
       setIsProcessing(false);
     }
